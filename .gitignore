@@ -1,0 +1,17 @@
+# Entornos
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Empaquetado
+*.egg-info/
+build/
+dist/
+
+# Pruebas
+.pytest_cache/
+.coverage
+
+# Datos locales de mgm (¡la cookie vive aquí!)
+.mgm/
