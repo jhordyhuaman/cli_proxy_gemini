@@ -58,7 +58,12 @@ class PermissionAsker:
             self.console.print(diff)
         self.console.print(f"  {AYUDA}")
         try:
-            respuesta = (await self.session.prompt_async("¿permites? [s/a/p/n] ")).strip().lower()
+            respuesta = (
+                await self.session.prompt_async(
+                    "¿permites? [S]í / [n]o / [a]=sí y no preguntes en esta sesión / "
+                    "[p]=sí y no preguntes nunca en este proyecto → "
+                )
+            ).strip().lower()
         except (EOFError, KeyboardInterrupt):
             return DENY
         return OPCIONES.get(respuesta, DENY)

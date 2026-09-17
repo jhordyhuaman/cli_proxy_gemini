@@ -32,6 +32,18 @@ class TestAlmacen:
         store.append(s, Message(role="user", content="arregla el login\ny lo demás"))
         assert store.load(s.meta.id).meta.title == "arregla el login"
 
+    def test_conversation_state_por_defecto_es_none(self, store, tmp_path):
+        s = store.create(tmp_path)
+        assert s.meta.conversation_state is None
+        assert store.load(s.meta.id).meta.conversation_state is None
+
+    def test_conversation_state_sobrevive_a_guardar_y_cargar(self, store, tmp_path):
+        s = store.create(tmp_path)
+        s.meta.conversation_state = {"conversation_id": "c1", "turn_index": 2}
+        store.bump_turn(s)
+        recargada = store.load(s.meta.id)
+        assert recargada.meta.conversation_state == {"conversation_id": "c1", "turn_index": 2}
+
     def test_sesion_inexistente_devuelve_none(self, store):
         assert store.load("nohay") is None
 

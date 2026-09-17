@@ -57,6 +57,32 @@ class TestTurnoCompleto:
         assert recargada.meta.turns == 1
         assert recargada.meta.title == "hola"
 
+    async def test_el_conversation_state_se_persiste_tras_el_turno(self, tmp_path):
+        from mgm.transport import Chunk
+
+        app, _ = app_de_prueba(
+            tmp_path, [["listo", Chunk(text="", state={"conversation_id": "c1"})]]
+        )
+        await app.run_turn("hola")
+        recargada = app.store.load(app.session.meta.id)
+        assert recargada.meta.conversation_state == {"conversation_id": "c1"}
+
+    async def test_reanudar_la_sesion_siembra_el_conversation_state(self, tmp_path):
+        from mgm.transport import Chunk
+
+        app, _ = app_de_prueba(
+            tmp_path, [["listo", Chunk(text="", state={"conversation_id": "c1"})]]
+        )
+        await app.run_turn("hola")
+        recuperada = app.store.load(app.session.meta.id)
+
+        console, _ = consola()
+        app2 = build_app(
+            console=console, workspace=tmp_path, home=tmp_path / "home",
+            mode="libre", transport="fake", session=recuperada,
+        )
+        assert app2.loop.conversation_state == {"conversation_id": "c1"}
+
     async def test_se_puede_retomar_la_sesion(self, tmp_path):
         app, _ = app_de_prueba(tmp_path, ["primera respuesta"])
         await app.run_turn("recuerda el número 7")
@@ -139,6 +165,23 @@ class TestComandos:
         await ejecutar_comando(app, "/ayuda")
         salida = buffer.getvalue()
         assert "/modo" in salida and "/sesiones" in salida and "/skills" in salida
+        assert "/actualizar" in salida
+
+    async def test_actualizar_reporta_el_resultado(self, tmp_path, monkeypatch):
+        import mgm.commands as mod
+
+        monkeypatch.setattr(mod, "actualizar", lambda: (True, "actualizado: aaa → bbb"))
+        app, buffer = app_de_prueba(tmp_path, ["x"])
+        await ejecutar_comando(app, "/actualizar")
+        assert "actualizado: aaa → bbb" in buffer.getvalue()
+
+    async def test_actualizar_muestra_el_error_con_claridad(self, tmp_path, monkeypatch):
+        import mgm.commands as mod
+
+        monkeypatch.setattr(mod, "actualizar", lambda: (False, "git pull falló"))
+        app, buffer = app_de_prueba(tmp_path, ["x"])
+        await ejecutar_comando(app, "/actualizar")
+        assert "git pull falló" in buffer.getvalue()
 
     async def test_skills_se_listan(self, tmp_path):
         app, buffer = app_de_prueba(tmp_path, ["x"])
@@ -151,6 +194,17 @@ class TestComandos:
         vieja = app.session.meta.id
         await ejecutar_comando(app, "/limpiar")
         assert app.session.meta.id != vieja and app.loop.messages == []
+
+    async def test_limpiar_tambien_olvida_el_conversation_state(self, tmp_path):
+        from mgm.transport import Chunk
+
+        app, _ = app_de_prueba(
+            tmp_path, [["listo", Chunk(text="", state={"conversation_id": "c1"})]]
+        )
+        await app.run_turn("hola")
+        assert app.loop.conversation_state == {"conversation_id": "c1"}
+        await ejecutar_comando(app, "/limpiar")
+        assert app.loop.conversation_state is None
 
     async def test_contexto_muestra_el_gasto(self, tmp_path):
         app, buffer = app_de_prueba(tmp_path, ["x"])
@@ -182,6 +236,14 @@ class TestArgumentos:
         assert parse_args(["-c"]).continuar is True
         assert parse_args(["-r", "abc123"]).resume == "abc123"
 
+    def test_nueva_fuerza_sesion_limpia(self):
+        assert parse_args(["-n"]).nueva is True
+        assert parse_args([]).nueva is False
+
+    def test_bandera_actualizar(self):
+        assert parse_args(["--actualizar"]).actualizar is True
+        assert parse_args([]).actualizar is False
+
     def test_modo_invalido_muere(self):
         with pytest.raises(SystemExit):
             parse_args(["--modo", "turbo"])
@@ -189,6 +251,39 @@ class TestArgumentos:
     def test_cookie(self):
         args = parse_args(["--cookie", "SECRETO"])
         assert args.cookie == "SECRETO" and args.cookie_nombre == "__Secure-1PSID"
+
+
+class TestRecuperarSesion:
+    def test_sin_flags_retoma_la_ultima_sesion_de_la_carpeta(self, tmp_path):
+        from mgm.cli import parse_args, recuperar_sesion
+        from mgm.session import SessionStore
+
+        home = tmp_path / "home"
+        store = SessionStore(home / ".mgm" / "sessions")
+        previa = store.create(tmp_path)
+        store.bump_turn(previa)
+
+        console, _ = consola()
+        sesion = recuperar_sesion(parse_args([]), home, tmp_path, console)
+        assert sesion is not None and sesion.meta.id == previa.meta.id
+
+    def test_nueva_ignora_la_sesion_previa(self, tmp_path):
+        from mgm.cli import parse_args, recuperar_sesion
+        from mgm.session import SessionStore
+
+        home = tmp_path / "home"
+        SessionStore(home / ".mgm" / "sessions").create(tmp_path)
+
+        console, _ = consola()
+        sesion = recuperar_sesion(parse_args(["-n"]), home, tmp_path, console)
+        assert sesion is None
+
+    def test_sin_sesion_previa_no_hay_nada_que_retomar(self, tmp_path):
+        from mgm.cli import parse_args, recuperar_sesion
+
+        console, _ = consola()
+        sesion = recuperar_sesion(parse_args([]), tmp_path / "home", tmp_path, console)
+        assert sesion is None
 
 
 class TestVolcadoCookies:
@@ -266,3 +361,71 @@ class TestModelo:
 
         error = _classify_error(RuntimeError("Model not found: gemini"))
         assert "/modelo" in str(error) and "MGM_MODEL" in str(error)
+
+
+class TestBanner:
+    def test_avisa_al_retomar_una_sesion_con_turnos_previos(self, tmp_path):
+        from mgm.cli import banner
+
+        app, _ = app_de_prueba(tmp_path, ["ok"])
+        app.session.meta.turns = 3
+        texto = str(banner(app).renderable)
+        assert "Retomando sesión" in texto and "3 turno" in texto
+
+    def test_no_avisa_en_una_sesion_recien_creada(self, tmp_path):
+        from mgm.cli import banner
+
+        app, _ = app_de_prueba(tmp_path, ["ok"])
+        texto = str(banner(app).renderable)
+        assert "Retomando sesión" not in texto
+
+    def test_incluye_la_mascota_ascii(self, tmp_path):
+        from mgm.cli import MASCOTA, banner
+
+        app, _ = app_de_prueba(tmp_path, ["ok"])
+        texto = str(banner(app).renderable)
+        assert MASCOTA.strip("\n") in texto
+
+
+class TestEstadoDeCuenta:
+    async def test_sesion_valida_muestra_el_correo(self, tmp_path, monkeypatch):
+        import mgm.transport.g4f_cookie as mod
+        from mgm.cli import mostrar_estado_de_cuenta
+        from mgm.transport import G4FCookieTransport
+
+        monkeypatch.setattr(
+            mod, "_descargar_app_html",
+            lambda cookies: "<html>SNlM0e jhordyrx@gmail.com</html>",
+        )
+        app, buffer = app_de_prueba(tmp_path, ["x"])
+        app.broker.set_transport(G4FCookieTransport({"__Secure-1PSID": "x"}))
+        await mostrar_estado_de_cuenta(app)
+        assert "jhordyrx@gmail.com" in buffer.getvalue()
+
+    async def test_cookie_vencida_avisa_con_claridad(self, tmp_path, monkeypatch):
+        import mgm.transport.g4f_cookie as mod
+        from mgm.cli import mostrar_estado_de_cuenta
+        from mgm.transport import G4FCookieTransport
+
+        monkeypatch.setattr(mod, "_descargar_app_html", lambda cookies: "<html>anónimo</html>")
+        app, buffer = app_de_prueba(tmp_path, ["x"])
+        app.broker.set_transport(G4FCookieTransport({"__Secure-1PSID": "x"}))
+        await mostrar_estado_de_cuenta(app)
+        salida = buffer.getvalue().lower()
+        assert "venció" in salida or "rechazada" in salida
+
+    async def test_proveedor_automatico_avisa_que_no_es_tu_cuenta(self, tmp_path):
+        from mgm.cli import mostrar_estado_de_cuenta
+        from mgm.transport import G4FCookieTransport
+
+        app, buffer = app_de_prueba(tmp_path, ["x"])
+        app.broker.set_transport(G4FCookieTransport({"__Secure-1PSID": "x"}, provider="auto"))
+        await mostrar_estado_de_cuenta(app)
+        assert "no es tu cuenta" in buffer.getvalue().lower()
+
+    async def test_transporte_fake_no_hace_nada(self, tmp_path):
+        from mgm.cli import mostrar_estado_de_cuenta
+
+        app, buffer = app_de_prueba(tmp_path, ["x"])
+        await mostrar_estado_de_cuenta(app)
+        assert buffer.getvalue() == ""

@@ -23,6 +23,9 @@ class SessionMeta:
     workspace: str
     title: str = ""
     turns: int = 0
+    #: Estado opaco de continuidad de conversación del transporte (p. ej. el
+    #: conversation_id de Gemini), para retomar el MISMO chat al reanudar.
+    conversation_state: dict | None = None
 
     @property
     def created_label(self) -> str:

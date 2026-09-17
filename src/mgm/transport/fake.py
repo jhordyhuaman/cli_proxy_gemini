@@ -17,8 +17,14 @@ class FakeTransport:
         self._script = list(script) if script is not None else None
         self._index = 0
         self.chunk_delay = chunk_delay
+        #: El `state` recibido en cada llamada a stream(), en orden. Para que
+        #: los tests puedan comprobar qué le llega al transporte.
+        self.estados_recibidos: list[dict | None] = []
 
-    async def stream(self, messages: list[Message]) -> AsyncIterator[Chunk]:
+    async def stream(
+        self, messages: list[Message], *, state: dict | None = None
+    ) -> AsyncIterator[Chunk]:
+        self.estados_recibidos.append(state)
         entry: ScriptEntry
         if self._script is not None and self._index < len(self._script):
             entry = self._script[self._index]
@@ -36,7 +42,7 @@ class FakeTransport:
                 raise piece
             if self.chunk_delay:
                 await asyncio.sleep(self.chunk_delay)
-            yield Chunk(text=piece)
+            yield piece if isinstance(piece, Chunk) else Chunk(text=piece)
 
     async def health(self) -> Health:
         return Health(ok=True, detail="transporte simulado (sin red)")

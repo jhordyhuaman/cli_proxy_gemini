@@ -15,6 +15,10 @@ class Message:
 @dataclass
 class Chunk:
     text: str
+    #: Estado de conversación opaco (p. ej. el conversation_id de Gemini) que
+    #: el transporte quiera que se le reenvíe en la próxima llamada. Los
+    #: transportes que no lo soporten simplemente lo dejan en None.
+    state: dict | None = None
 
 
 @dataclass
@@ -35,6 +39,8 @@ class AuthError(TransportError):
 class Transport(Protocol):
     name: str
 
-    def stream(self, messages: list[Message]) -> AsyncIterator[Chunk]: ...
+    def stream(
+        self, messages: list[Message], *, state: dict | None = None
+    ) -> AsyncIterator[Chunk]: ...
 
     async def health(self) -> Health: ...

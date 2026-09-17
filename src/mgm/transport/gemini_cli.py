@@ -18,7 +18,9 @@ _MESSAGE = (
 class GeminiCLITransport:
     name = "gemini-cli"
 
-    async def stream(self, messages: list[Message]) -> AsyncIterator[Chunk]:
+    async def stream(
+        self, messages: list[Message], *, state: dict | None = None
+    ) -> AsyncIterator[Chunk]:
         raise NotImplementedError(_MESSAGE)
         yield
 

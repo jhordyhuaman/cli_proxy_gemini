@@ -5,10 +5,20 @@ from mgm.agent.events import AssistantText, ToolDecided, ToolExecuted, ToolReque
 from mgm.agent.loop import ALLOW_SESSION, DENY
 from mgm.permissions import PermissionEngine
 from mgm.tools import ToolContext, default_registry
-from mgm.transport import AuthError, FakeTransport, InferenceBroker, Message, TransportError
+from mgm.transport import (
+    AuthError,
+    Chunk,
+    FakeTransport,
+    InferenceBroker,
+    Message,
+    TransportError,
+)
 
 
-def build(script, *, mode="libre", asker=None, max_iterations=25, workspace=None):
+def build(
+    script, *, mode="libre", asker=None, max_iterations=25, workspace=None,
+    conversation_state=None,
+):
     rec = EventRecorder()
     loop = AgentLoop(
         InferenceBroker(FakeTransport(script=script), max_retries=0),
@@ -19,6 +29,7 @@ def build(script, *, mode="libre", asker=None, max_iterations=25, workspace=None
         asker=asker,
         on_event=rec,
         max_iterations=max_iterations,
+        conversation_state=conversation_state,
     )
     return loop, rec
 
@@ -242,6 +253,37 @@ class TestLimitesYFallos:
         assert loop.messages[2].content == "segundo"
 
 
+class TestContinuidadDeConversacion:
+    """El loop debe reenviar y actualizar el conversation_state del transporte,
+    para que g4f/Gemini continúe el mismo chat en vez de abrir uno nuevo."""
+
+    async def test_primer_turno_manda_state_none(self, ws):
+        loop, _ = build(["hola"], workspace=ws)
+        await loop.run_turn("hola")
+        assert loop.broker.transport.estados_recibidos == [None]
+
+    async def test_captura_el_state_devuelto_por_el_transporte(self, ws):
+        loop, _ = build(
+            [["hola", Chunk(text="", state={"conversation_id": "c1"})]], workspace=ws
+        )
+        await loop.run_turn("hola")
+        assert loop.conversation_state == {"conversation_id": "c1"}
+
+    async def test_el_siguiente_turno_reenvia_el_state_capturado(self, ws):
+        loop, _ = build(
+            [["uno", Chunk(text="", state={"conversation_id": "c1"})], "dos"],
+            workspace=ws,
+        )
+        await loop.run_turn("primero")
+        await loop.run_turn("segundo")
+        assert loop.broker.transport.estados_recibidos == [None, {"conversation_id": "c1"}]
+
+    async def test_se_puede_sembrar_un_state_inicial(self, ws):
+        loop, _ = build(["ok"], workspace=ws, conversation_state={"conversation_id": "previo"})
+        await loop.run_turn("hola")
+        assert loop.broker.transport.estados_recibidos == [{"conversation_id": "previo"}]
+
+
 class TestPromptDeSistema:
     def test_incluye_herramientas_y_workspace(self):
         p = build_system_prompt(default_registry(), workspace="/tmp/x", memoria="recuerda esto")
@@ -250,3 +292,13 @@ class TestPromptDeSistema:
     def test_explica_el_protocolo_xml(self):
         p = build_system_prompt(default_registry())
         assert "<tool name=" in p and "</tool>" in p
+
+    def test_pide_preguntar_ante_encargos_ambiguos(self):
+        p = build_system_prompt(default_registry())
+        assert "pregunta" in p.lower() and "ambig" in p.lower()
+
+    def test_pide_validar_de_verdad_antes_de_terminar(self):
+        p = build_system_prompt(default_registry())
+        minuscula = p.lower()
+        assert "background" in minuscula or "segundo plano" in minuscula
+        assert "instala" in minuscula or "instálalas" in minuscula

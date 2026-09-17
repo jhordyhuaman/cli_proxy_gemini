@@ -36,13 +36,16 @@ class InferenceBroker:
     def set_transport(self, transport: Transport) -> None:
         self._transport = transport
 
-    async def stream(self, messages: list[Message]) -> AsyncIterator[Chunk]:
+    async def stream(
+        self, messages: list[Message], *, state: dict | None = None
+    ) -> AsyncIterator[Chunk]:
         async with self._lock:
             attempt = 0
+            estado_actual = state
             while True:
                 yielded = False
                 try:
-                    async for chunk in self._transport.stream(messages):
+                    async for chunk in self._transport.stream(messages, state=estado_actual):
                         yielded = True
                         yield chunk
                     return
@@ -51,6 +54,10 @@ class InferenceBroker:
                 except TransportError:
                     if yielded or attempt >= self.max_retries:
                         raise
+                    # El estado pudo ser la causa del fallo (conversación
+                    # vencida/rechazada): el reintento cae a modo texto-completo
+                    # en vez de repetir el mismo error para siempre.
+                    estado_actual = None
                     delay = min(self.base_delay * (2 ** attempt), self.max_delay)
                     await self._sleep(delay)
                     attempt += 1

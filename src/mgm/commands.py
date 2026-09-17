@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
+from .actualizar import actualizar
 from .app import TRANSPORTES, App, build_transport
 from .permissions import MODE_HELP, MODES
 from .session import compact
@@ -178,8 +180,18 @@ async def cmd_memoria(app: App, resto: str) -> None:
 
 async def cmd_limpiar(app: App, resto: str) -> None:
     app.loop.messages.clear()
+    app.loop.conversation_state = None
     app.session = app.store.create(app.workspace)
     app.console.print(f"[ok]Sesión nueva:[/ok] {app.session.meta.id}")
+
+
+async def cmd_actualizar(app: App, resto: str) -> None:
+    app.console.print("[apagado]Buscando la última versión en GitHub…[/apagado]")
+    ok, detalle = await asyncio.to_thread(actualizar)
+    if ok:
+        app.console.print(f"[ok]{detalle}[/ok] [apagado](reinicia mgm para usarla)[/apagado]")
+    else:
+        app.console.print(f"[error]No se pudo actualizar:[/error] {detalle}")
 
 
 async def cmd_herramientas(app: App, resto: str) -> None:
@@ -204,6 +216,7 @@ COMANDOS: dict[str, Comando] = {
     "/memoria": Comando("/memoria", "qué MGM.md se cargó", cmd_memoria),
     "/herramientas": Comando("/herramientas", "mostrar u ocultar la salida de las tools", cmd_herramientas),
     "/limpiar": Comando("/limpiar", "empezar una sesión nueva", cmd_limpiar),
+    "/actualizar": Comando("/actualizar", "traer la última versión desde GitHub", cmd_actualizar),
 }
 
 AYUDA_COMANDOS = {nombre: c.ayuda for nombre, c in COMANDOS.items()}

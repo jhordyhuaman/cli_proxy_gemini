@@ -93,3 +93,17 @@ async def test_health_passthrough():
     broker, _ = make_broker([])
     health = await broker.health()
     assert health.ok
+
+
+async def test_state_se_manda_al_transporte(messages):
+    broker, _ = make_broker(["ok"])
+    async for _ in broker.stream(messages, state={"conversation_id": "c1"}):
+        pass
+    assert broker.transport.estados_recibidos == [{"conversation_id": "c1"}]
+
+
+async def test_state_se_descarta_tras_un_fallo_y_reintento(messages):
+    broker, _ = make_broker([TransportError("caído"), "ok"], base_delay=0.0)
+    async for _ in broker.stream(messages, state={"conversation_id": "c1"}):
+        pass
+    assert broker.transport.estados_recibidos == [{"conversation_id": "c1"}, None]

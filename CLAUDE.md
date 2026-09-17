@@ -23,6 +23,8 @@ Todo el código, los comentarios, la UI y los tests están **en español**. Mant
 .venv/bin/mgm --transporte fake -p "hola"  # turno único sin red
 .venv/bin/mgm --workspace /tmp/x           # REPL en otra carpeta
 .venv/bin/mgm --cookie "VALOR"             # guarda la cookie en ~/.mgm/credentials.json (0600)
+.venv/bin/mgm -n                           # sesión nueva a propósito (por defecto se auto-continúa)
+.venv/bin/mgm --actualizar                 # trae la última versión desde GitHub (git pull o zip)
 
 installer/instalar.sh                      # instalación de usuario (mac/linux)
 powershell -ExecutionPolicy Bypass -File installer\instalar.ps1   # idem Windows, sin admin
@@ -94,6 +96,15 @@ preguntas de permiso descoordinadas. `agent/subagent.py` es el lado padre; `ipc/
   `Model not found`. `resolver_modelo()` traduce los alias cómodos.
 - **El prompt del sistema no vive en `loop.messages`.** Se antepone en `_wire_messages()`, así que
   el historial persistido queda limpio y el prompt se puede refrescar entre turnos.
+- **mgm retoma la MISMA conversación de Gemini, no solo el historial local.** `Chunk.state` y
+  `Transport.stream(messages, state=...)` son el hueco genérico del puerto para esto — opaco y
+  opcional, así que `FakeTransport`/`GeminiCLITransport` lo ignoran sin problema.
+  `G4FCookieTransport` lo traduce al `conversation=`/`Conversation` reales de g4f (por eso cada
+  turno ya NO abre un chat nuevo en el servidor de Gemini). El estado vive en `AgentLoop.
+  conversation_state` (no en el transporte compartido) para que los subagentes, que comparten el
+  mismo broker que el agente principal, nunca hereden ni contaminen su hilo — cada `serve()` de
+  `SubagentSupervisor` es una conversación de Gemini aislada y de un solo uso. `SessionMeta.
+  conversation_state` lo persiste para que sobreviva a cerrar la terminal.
 
 ### Mapa de módulos
 
@@ -109,6 +120,7 @@ preguntas de permiso descoordinadas. `agent/subagent.py` es el lado padre; `ipc/
 | `skills/` | cargador con frontmatter + skills incluidas (`tdd`, `depurar`, `revisar`) |
 | `ui/` | tema de rich, diffs, autocompletado, pregunta de permiso |
 | `app.py` / `commands.py` / `cli.py` | ensamblado, comandos de barra, argumentos y REPL |
+| `actualizar.py` | autoactualización desde GitHub (`git pull` o zip sin git) |
 
 ## Cómo se prueban las cosas aquí
 

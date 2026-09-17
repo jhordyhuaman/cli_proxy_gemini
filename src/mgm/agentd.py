@@ -100,7 +100,13 @@ class ParentTransport:
     def __init__(self, runtime: ChildRuntime):
         self.runtime = runtime
 
-    async def stream(self, messages: list[Message]) -> AsyncIterator[Chunk]:
+    async def stream(
+        self, messages: list[Message], *, state: dict | None = None
+    ) -> AsyncIterator[Chunk]:
+        # El estado de conversación real de Gemini no viaja hacia los
+        # subagentes a propósito: cada llamada de un hijo debe ser un
+        # intercambio aislado, nunca mezclado con el hilo del agente
+        # principal ni con el de otro subagente que comparta el mismo broker.
         msg_id = self.runtime.siguiente_id()
         cola = self.runtime.abrir(msg_id)
         try:

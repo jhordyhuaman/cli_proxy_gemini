@@ -83,6 +83,49 @@ def es_texto(pieza: object) -> bool:
     return isinstance(pieza, str) and pieza != ""
 
 
+#: Atributos que identifican al objeto Conversation que g4f/Gemini devuelve
+#: (g4f.Provider.needs_auth.Gemini.Conversation). Se detecta por duck-typing
+#: en vez de importarlo: es una clase interna de un paquete que cambia rápido.
+_ATRIBUTOS_CONVERSACION = ("conversation_id", "response_id", "choice_id")
+
+
+def _es_conversacion(pieza: object) -> bool:
+    return not es_texto(pieza) and all(hasattr(pieza, a) for a in _ATRIBUTOS_CONVERSACION)
+
+
+@dataclass
+class _EstadoConversacion:
+    """Objeto mínimo que g4f acepta como `conversation=`: solo mira atributos."""
+
+    conversation_id: str
+    response_id: str
+    choice_id: str
+    model: str
+    turn_index: int = 0
+
+
+def _conversacion_desde_estado(state: dict | None) -> "_EstadoConversacion | None":
+    if not state:
+        return None
+    return _EstadoConversacion(
+        conversation_id=state.get("conversation_id", ""),
+        response_id=state.get("response_id", ""),
+        choice_id=state.get("choice_id", ""),
+        model=state.get("model", ""),
+        turn_index=state.get("turn_index", 0),
+    )
+
+
+def _estado_desde_conversacion(conversacion: object) -> dict:
+    return {
+        "conversation_id": conversacion.conversation_id,
+        "response_id": conversacion.response_id,
+        "choice_id": conversacion.choice_id,
+        "model": getattr(conversacion, "model", ""),
+        "turn_index": getattr(conversacion, "turn_index", 0),
+    }
+
+
 def resolver_modelo(nombre: str) -> str:
     limpio = (nombre or "").strip()
     return ALIAS_MODELOS.get(limpio.lower(), limpio)
@@ -160,7 +203,7 @@ class G4FCookieTransport:
         """True si vamos por tu sesión autenticada y no por un endpoint anónimo."""
         return self._provider.lower() != PROVEEDOR_AUTO
 
-    def _create_stream(self, messages: list[Message]):
+    def _create_stream(self, messages: list[Message], state: dict | None = None):
         g4f = _import_g4f()
         extra = {}
         if self.usa_tu_cuenta:
@@ -168,6 +211,12 @@ class G4FCookieTransport:
             # en silencio a un endpoint libre anónimo, y creerías que estás
             # usando tu cuenta Pro cuando no es así.
             extra["provider"] = self._provider
+        if self._provider.lower() == PROVEEDOR_COOKIE.lower():
+            # Le pasamos de vuelta la Conversation de la llamada anterior para
+            # que Gemini continúe el MISMO chat en su servidor, en vez de abrir
+            # uno nuevo cada vez (que es lo que pasa si conversation=None).
+            extra["conversation"] = _conversacion_desde_estado(state)
+            extra["return_conversation"] = True
         return g4f.ChatCompletion.create(
             model=self._model,
             messages=[{"role": m.role, "content": m.content} for m in messages],
@@ -189,16 +238,32 @@ class G4FCookieTransport:
                 return pieza
         return _SENTINEL
 
-    async def stream(self, messages: list[Message]) -> AsyncIterator[Chunk]:
+    @staticmethod
+    def _next_relevante(iterator) -> object:
+        """Como _next_piece, pero sin descartar la Conversation de Gemini."""
+        for pieza in iterator:
+            if es_texto(pieza) or _es_conversacion(pieza):
+                return pieza
+        return _SENTINEL
+
+    async def stream(
+        self, messages: list[Message], *, state: dict | None = None
+    ) -> AsyncIterator[Chunk]:
         if not self._cookies:
             raise AuthError("no hay cookie configurada en ~/.mgm/credentials.json")
         try:
-            generator = await asyncio.to_thread(self._create_stream, messages)
+            generator = await asyncio.to_thread(self._create_stream, messages, state)
+            ultimo_estado: dict | None = None
             while True:
-                piece = await asyncio.to_thread(self._next_piece, generator)
+                piece = await asyncio.to_thread(self._next_relevante, generator)
                 if piece is _SENTINEL:
                     break
-                yield Chunk(text=piece)
+                if es_texto(piece):
+                    yield Chunk(text=piece)
+                else:
+                    ultimo_estado = _estado_desde_conversacion(piece)
+            if ultimo_estado is not None:
+                yield Chunk(text="", state=ultimo_estado)
         except Exception as exc:
             raise _classify_error(exc) from exc
 

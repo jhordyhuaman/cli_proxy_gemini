@@ -65,6 +65,7 @@ class AgentLoop:
         asker: Asker | None = None,
         on_event: Emit | None = None,
         max_iterations: int = 25,
+        conversation_state: dict | None = None,
     ):
         self.broker = broker
         self.registry = registry
@@ -75,6 +76,11 @@ class AgentLoop:
         self.asker = asker
         self.on_event = on_event or (lambda event: None)
         self.max_iterations = max_iterations
+        #: Estado opaco de continuidad de conversación (p. ej. el
+        #: conversation_id de Gemini) para que el transporte no abra un chat
+        #: nuevo en cada llamada. Lo actualiza _stream_once con lo que
+        #: devuelva el transporte.
+        self.conversation_state = conversation_state
 
     # ---------------------------------------------------------------- helpers
 
@@ -95,8 +101,11 @@ class AgentLoop:
                 elif isinstance(evento, ToolCallEvent):
                     llamadas.append(evento)
 
-        async with aclosing(self.broker.stream(self._wire_messages())) as stream:
+        peticion = self.broker.stream(self._wire_messages(), state=self.conversation_state)
+        async with aclosing(peticion) as stream:
             async for chunk in stream:
+                if chunk.state is not None:
+                    self.conversation_state = chunk.state
                 crudo.append(chunk.text)
                 procesar(parser.feed(chunk.text))
         procesar(parser.flush())

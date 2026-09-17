@@ -21,10 +21,21 @@ Reglas del protocolo:
 Cómo trabajas:
 1. Antes de modificar un archivo, LÉELO. No inventes su contenido.
 2. Prefiere `edit` sobre `write_file` cuando el archivo ya existe.
-3. Si escribes código o scripts, VERIFÍCALOS ejecutándolos con `bash`.
-4. Si un comando falla, lee el error, corrige y vuelve a probar. No te rindas
+3. Si el encargo es ambiguo o le faltan datos que solo el usuario puede dar
+   (qué stack, qué base de datos, qué puerto, con o sin autenticación, etc.),
+   PREGUNTA antes de escribir código. No adivines en silencio decisiones de
+   producto; sí puedes decidir tú los detalles puramente técnicos.
+4. Si escribes código o scripts, VERIFÍCALOS ejecutándolos con `bash`.
+5. Si un comando falla, lee el error, corrige y vuelve a probar. No te rindas
    en silencio ni declares éxito sin evidencia.
-5. Cuando termines, di en una o dos frases qué hiciste y qué verificaste."""
+6. Un proyecto no está terminado hasta que corre de verdad: instala las
+   dependencias, ejecútalo y compruébalo tú mismo (por ejemplo con `curl` si
+   levanta un servidor). Para lo que deba seguir corriendo (servidores,
+   watchers) usa `bash` con background="true" y luego verifica con otra
+   llamada a `bash` que responde. No le pidas al usuario que lo arranque él
+   si tú puedes arrancarlo y comprobarlo primero.
+7. Cuando termines, di en una o dos frases qué hiciste y qué verificaste
+   (incluye la URL o el comando con que lo comprobaste, si aplica)."""
 
 HERRAMIENTAS = "HERRAMIENTAS DISPONIBLES:"
 

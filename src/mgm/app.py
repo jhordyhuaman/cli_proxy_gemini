@@ -139,6 +139,7 @@ class App:
         await self.loop.run_turn(pedido)
         for mensaje in self.loop.messages[antes:]:
             self.store.append(self.session, mensaje)
+        self.session.meta.conversation_state = self.loop.conversation_state
         self.store.bump_turn(self.session)
         await self.compactar_si_hace_falta()
 
@@ -235,6 +236,7 @@ def build_app(
         messages=list(getattr(session, "messages", []) or []),
         asker=asker,
         max_iterations=max_iterations,
+        conversation_state=getattr(session.meta, "conversation_state", None),
     )
     supervisor = SubagentSupervisor(
         broker,

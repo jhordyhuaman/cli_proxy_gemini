@@ -4,6 +4,7 @@ from prompt_toolkit.document import Document
 from rich.console import Console
 
 from mgm.agent.loop import ALLOW_ONCE, ALLOW_PROJECT, ALLOW_SESSION, DENY
+from mgm.permissions import Decision
 from mgm.tools import ToolCall
 from mgm.ui import MgmCompleter, make_console
 from mgm.ui.console import TEMA, acortar, diff_de_llamada, panel_resultado, render_diff
@@ -93,6 +94,45 @@ class TestRespuestasDePermiso:
 
     def test_lo_no_reconocido_se_trata_como_negativa(self):
         assert OPCIONES.get("cualquier cosa", DENY) == DENY
+
+
+class SesionFalsa:
+    """Sustituye a PromptSession: registra el texto y devuelve una respuesta guionada."""
+
+    def __init__(self, respuesta: str = "s"):
+        self.respuesta = respuesta
+        self.textos_pedidos: list[str] = []
+
+    async def prompt_async(self, texto: str) -> str:
+        self.textos_pedidos.append(texto)
+        return self.respuesta
+
+
+class TestPermissionAsker:
+    def _asker(self, respuesta="s"):
+        from pathlib import Path
+
+        from mgm.ui.prompt import PermissionAsker
+
+        sesion = SesionFalsa(respuesta)
+        console = make_console(file=io.StringIO(), force_terminal=False)
+        asker = PermissionAsker(console, sesion, Path("/tmp"))
+        return asker, sesion
+
+    async def test_el_texto_del_prompt_explica_cada_letra_no_solo_las_muestra(self):
+        asker, sesion = self._asker()
+        await asker(ToolCall("bash", {"command": "ls"}), "ejecutar: ls", Decision("ask", "x"))
+        texto = sesion.textos_pedidos[0]
+        # No basta con "[s/a/p/n]": cada letra debe explicar qué hace, para no
+        # verse como "letras sin sentido" (la confusión real que reportaron).
+        assert "no" in texto.lower()
+        assert "sesión" in texto.lower()
+        assert "proyecto" in texto.lower()
+
+    async def test_sigue_devolviendo_lo_que_el_usuario_eligio(self):
+        asker, _ = self._asker(respuesta="a")
+        resultado = await asker(ToolCall("bash", {"command": "ls"}), "ejecutar: ls", Decision("ask", "x"))
+        assert resultado == ALLOW_SESSION
 
 
 class TestAutocompletado:

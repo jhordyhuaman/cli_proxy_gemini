@@ -118,14 +118,24 @@ Sin cookie, mgm arranca en transporte `fake` (responde sin red) para que puedas 
 ## Uso
 
 ```bash
-mgm                               # sesión interactiva
+mgm                               # retoma sola la última sesión de esta carpeta (o abre una si es la primera vez)
 mgm "arregla el login"            # una pregunta suelta
-mgm -p "resume este repo"         # turno único, para scripts
-mgm -c                            # retoma la última sesión de esta carpeta
-mgm -r a1b2c3d4                   # retoma una sesión concreta
+mgm -p "resume este repo"         # turno único, para scripts (también auto-continúa)
+mgm -n                            # fuerza una sesión nueva, ignorando la anterior
+mgm -r a1b2c3d4                   # retoma una sesión concreta por id
 mgm --sesiones                    # lista las sesiones guardadas
+mgm --actualizar                  # trae la última versión desde GitHub
 mgm --modo plan                   # arranca en modo solo lectura
 ```
+
+mgm **no abre un chat nuevo cada vez**: por defecto retoma tanto tu historial local como el mismo
+hilo de conversación en el servidor de Gemini (mismo `conversation_id`), así que iterar sobre el
+mismo encargo en la misma carpeta es literalmente el mismo chat. Usa `-n` cuando sí quieras
+arrancar de cero.
+
+Al arrancar la sesión interactiva, mgm te dice con qué cuenta estás hablando —
+`Conectado a Gemini como tu_correo@gmail.com`, o un aviso si estás en el endpoint
+anónimo/gratuito en vez de tu cuenta.
 
 Dentro de la sesión, escribe `@ruta/archivo` para adjuntar su contenido (con autocompletado).
 
@@ -144,7 +154,8 @@ Dentro de la sesión, escribe `@ruta/archivo` para adjuntar su contenido (con au
 | `/sesiones` | sesiones guardadas de esta carpeta |
 | `/skills` | skills disponibles |
 | `/memoria` | qué `MGM.md` se cargó |
-| `/limpiar` | empezar de cero |
+| `/limpiar` | empezar de cero (sesión local Y conversación de Gemini) |
+| `/actualizar` | traer la última versión desde GitHub |
 | `/salir` | terminar |
 
 ---
@@ -163,6 +174,12 @@ Cuando mgm pide permiso te enseña **el diff exacto** antes de que decidas, y pu
 
 Las reglas se guardan como `bash(git status:*)` o `write_file(src/**)`. Una regla de prohibición
 gana siempre, incluso en modo `libre`.
+
+mgm no se da por terminado con solo dejar los archivos escritos: instala dependencias, corre lo
+que hizo y lo comprueba (por ejemplo con `curl`) antes de avisarte. Para servidores o watchers que
+deben seguir corriendo, `bash` acepta `background="true"`: arranca el proceso, sigue con la
+verificación en la misma conversación y te entrega el resultado ya probado, no un "ahora ejecútalo
+tú".
 
 ---
 

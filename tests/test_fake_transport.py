@@ -47,6 +47,24 @@ async def test_health_always_ok():
     assert health.ok
 
 
+async def test_registra_el_state_recibido(messages):
+    transport = FakeTransport(script=["ok", "ok2"])
+    async for _ in transport.stream(messages, state=None):
+        pass
+    async for _ in transport.stream(messages, state={"conversation_id": "c1"}):
+        pass
+    assert transport.estados_recibidos == [None, {"conversation_id": "c1"}]
+
+
+async def test_puede_scriptear_un_chunk_con_state(messages):
+    from mgm.transport import Chunk
+
+    transport = FakeTransport(script=[["hola", Chunk(text="", state={"conversation_id": "c1"})]])
+    chunks = [c async for c in transport.stream(messages)]
+    assert [c.text for c in chunks] == ["hola", ""]
+    assert chunks[-1].state == {"conversation_id": "c1"}
+
+
 class TestFiltroDeStreamG4F:
     """El stream real de g4f mezcla texto con objetos de control del proveedor."""
 
@@ -101,7 +119,7 @@ class TestFiltroDeStreamG4F:
                 return "{'data': [['wrb.fr', None, 'no debe salir']]}"
 
         t = G4FCookieTransport({"__Secure-1PSID": "x"})
-        t._create_stream = lambda mensajes: iter([Control(), "texto ", Control(), "real"])
+        t._create_stream = lambda mensajes, state=None: iter([Control(), "texto ", Control(), "real"])
         piezas = [c.text async for c in t.stream([Message(role="user", content="hola")])]
         assert piezas == ["texto ", "real"]
         assert "wrb.fr" not in "".join(piezas)

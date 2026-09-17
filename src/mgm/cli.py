@@ -17,9 +17,21 @@ from .commands import AYUDA_COMANDOS, SALIR, ejecutar_comando
 from .config import load_cookies, load_credentials, mgm_dir, save_credentials
 from .permissions import DEFAULT_MODE, MODES
 from .session import SessionStore
+from .transport import TransportError
 from .ui import MgmCompleter, PermissionAsker, make_console
 
 COOKIE_DEFECTO = "__Secure-1PSID"
+
+#: Un gema pequeña — guiño a Gemini — en ASCII puro para que se vea bien en
+#: cualquier terminal, incluida una consola de Windows sin nada configurado.
+MASCOTA = r"""
+    /\
+   /  \
+  /----\
+  \    /
+   \  /
+    \/
+"""
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -32,8 +44,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("-p", "--print", dest="imprimir", metavar="TEXTO",
                    help="responde una sola vez y termina (para scripts)")
     p.add_argument("-c", "--continue", dest="continuar", action="store_true",
-                   help="retoma la última sesión de esta carpeta")
+                   help="retoma la última sesión de esta carpeta (ya es el comportamiento "
+                        "por defecto; se mantiene por compatibilidad)")
     p.add_argument("-r", "--resume", dest="resume", metavar="ID", help="retoma una sesión por id")
+    p.add_argument("-n", "--nueva", dest="nueva", action="store_true",
+                   help="empieza una sesión nueva en esta carpeta, ignorando la anterior")
     p.add_argument("--modo", choices=MODES, default=DEFAULT_MODE, help="modo de permisos")
     p.add_argument("--transporte", choices=("fake", "g4f", "gemini-cli"),
                    help="fuerza un transporte concreto")
@@ -45,6 +60,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         "También acepta el header Cookie: completo ('a=1; b=2; ...')")
     p.add_argument("--cookie-nombre", default=COOKIE_DEFECTO, help="nombre de la cookie a guardar")
     p.add_argument("--sesiones", action="store_true", help="lista las sesiones guardadas y termina")
+    p.add_argument("--actualizar", action="store_true",
+                   help="trae la última versión desde GitHub y termina")
     p.add_argument("--diagnostico", action="store_true",
                    help="comprueba que mgm funciona en esta máquina y termina")
     p.add_argument("--con-red", action="store_true",
@@ -103,6 +120,7 @@ def listar_sesiones(home: Path, workspace: Path, console) -> int:
 
 
 def recuperar_sesion(args, home: Path, workspace: Path, console):
+    """Decide con qué sesión arrancar: --resume > --nueva > auto-continuar (defecto)."""
     store = SessionStore(mgm_dir(home) / "sessions")
     if args.resume:
         sesion = store.load(args.resume)
@@ -110,21 +128,55 @@ def recuperar_sesion(args, home: Path, workspace: Path, console):
             console.print(f"[error]No existe la sesión[/error] {args.resume}")
             raise SystemExit(2)
         return sesion
-    if args.continuar:
-        sesion = store.latest(workspace=workspace)
-        if sesion is None:
-            console.print("[apagado]No había sesión previa en esta carpeta: empiezo una nueva.[/apagado]")
-        return sesion
-    return None
+    if args.nueva:
+        return None
+    return store.latest(workspace=workspace)
 
 
 def banner(app: App) -> Panel:
-    texto = (
-        f"[marca]mgm v{__version__}[/marca] — tu agente de terminal\n"
-        f"[apagado]{app.resumen_estado()}[/apagado]\n"
-        f"[apagado]/ayuda para los comandos · @archivo para adjuntar · Ctrl-D para salir[/apagado]"
+    mascota = MASCOTA.strip("\n")
+    lineas = [
+        f"[marca]{mascota}[/marca]",
+        f"[marca]mgm v{__version__}[/marca] — tu agente de terminal",
+    ]
+    if app.session.meta.turns > 0:
+        lineas.append(
+            f"[apagado]Retomando sesión del {app.session.meta.updated_label} · "
+            f"{app.session.meta.turns} turno(s) previos · usa -n para empezar de cero[/apagado]"
+        )
+    lineas.append(f"[apagado]{app.resumen_estado()}[/apagado]")
+    lineas.append(
+        "[apagado]/ayuda para los comandos · @archivo para adjuntar · Ctrl-D para salir[/apagado]"
     )
-    return Panel(texto, border_style="marca")
+    return Panel("\n".join(lineas), border_style="marca")
+
+
+async def mostrar_estado_de_cuenta(app: App) -> None:
+    """Aviso al arrancar: con qué cuenta de Gemini se está hablando, si es que hay alguna.
+
+    El objetivo del proyecto entero es no usar sin darte cuenta el endpoint
+    anónimo de g4f en vez de tu cuenta Pro — por eso esto se muestra siempre
+    que hay un transporte 'g4f' en juego, no solo en /diagnóstico.
+    """
+    transporte = app.broker.transport
+    if getattr(transporte, "name", "") != "g4f":
+        return
+    if not transporte.usa_tu_cuenta:
+        app.console.print(
+            "[warning]Usando el endpoint automático de g4f: NO es tu cuenta de Gemini.[/warning]"
+        )
+        return
+    try:
+        sesion = await transporte.verificar_sesion()
+    except TransportError as exc:
+        app.console.print(f"[apagado]No se pudo verificar la sesión de Gemini ({exc}).[/apagado]")
+        return
+    if sesion.valida:
+        app.console.print(f"[ok]Conectado a Gemini como {sesion.email or '(correo no detectado)'}[/ok]")
+    else:
+        app.console.print(
+            f"[error]Tu cookie de Gemini venció o fue rechazada.[/error] [apagado]{sesion.detalle}[/apagado]"
+        )
 
 
 async def run_repl(app: App, home: Path) -> int:
@@ -140,9 +192,12 @@ async def run_repl(app: App, home: Path) -> int:
     app.console.print(banner(app))
     if app.broker.transport.name == "fake" and not load_cookies(home):
         app.console.print(
-            "[warning]Sin cookie configurada: estás en el transporte 'fake' (sin red).[/warning]\n"
+            "[warning]Sin cookie configurada: estás usando Gemini sin tu cuenta (transporte "
+            "'fake', sin red).[/warning]\n"
             "[apagado]Guárdala con: mgm --cookie 'TU_VALOR'[/apagado]"
         )
+    else:
+        await mostrar_estado_de_cuenta(app)
 
     while True:
         try:
@@ -183,6 +238,13 @@ async def _main(argv: list[str] | None = None) -> int:
         return guardar_cookie(args.cookie, args.cookie_nombre, home, console)
     if args.sesiones:
         return listar_sesiones(home, workspace, console)
+    if args.actualizar:
+        from .actualizar import actualizar
+
+        console.print("[apagado]Buscando la última versión en GitHub…[/apagado]")
+        ok, detalle = await asyncio.to_thread(actualizar)
+        console.print(f"[ok]{detalle}[/ok]" if ok else f"[error]No se pudo actualizar:[/error] {detalle}")
+        return 0 if ok else 1
     if args.diagnostico:
         from .config import load_config
         from .diagnostico import diagnosticar, imprimir
