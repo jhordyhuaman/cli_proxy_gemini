@@ -77,15 +77,35 @@ $lanzador = Join-Path $binDir "mgm.cmd"
 Escribir "[OK] Lanzador creado en $lanzador" "Green"
 
 # --- 5. PATH del usuario ----------------------------------------------------
+# Al FRENTE, no al final: si ya tienes otro "mgm" en el PATH (una instalación
+# global vieja, por ejemplo), Windows ejecuta el que aparece primero. Puesto
+# al final, el nuestro nunca ganaba — eso es lo que le pasó a un usuario real.
 $pathUsuario = [Environment]::GetEnvironmentVariable("Path", "User")
 if (-not $pathUsuario) { $pathUsuario = "" }
-if ($pathUsuario -split ";" -notcontains $binDir) {
-    $nuevoPath = if ($pathUsuario.TrimEnd(";")) { "$($pathUsuario.TrimEnd(';'));$binDir" } else { $binDir }
+$otrasEntradas = @($pathUsuario -split ";" | Where-Object { $_ -and $_ -ne $binDir })
+$nuevoPath = (@($binDir) + $otrasEntradas) -join ";"
+if ($nuevoPath -ne $pathUsuario) {
     [Environment]::SetEnvironmentVariable("Path", $nuevoPath, "User")
-    Escribir "[OK] $binDir añadido al PATH de tu usuario." "Green"
+    Escribir "[OK] $binDir puesto al FRENTE del PATH de tu usuario." "Green"
     Escribir "     Abre una terminal NUEVA para que surta efecto." "Yellow"
 } else {
-    Escribir "[OK] El PATH ya estaba configurado." "Green"
+    Escribir "[OK] El PATH ya estaba configurado correctamente." "Green"
+}
+
+# --- 6. Avisar si hay OTRO "mgm" que podría competir en el PATH -------------
+$rutaActualizada = "$binDir;$env:Path"
+$otrosMgm = @()
+foreach ($carpeta in ($rutaActualizada -split ";" | Select-Object -Unique)) {
+    if (-not $carpeta) { continue }
+    foreach ($nombre in @("mgm.exe", "mgm.cmd", "mgm.bat")) {
+        $candidato = Join-Path $carpeta $nombre
+        if ((Test-Path $candidato) -and ($carpeta -ne $binDir)) { $otrosMgm += $candidato }
+    }
+}
+if ($otrosMgm.Count -gt 0) {
+    Escribir "[AVISO] Además del que acabas de instalar, hay otro(s) 'mgm' en tu PATH:" "Yellow"
+    $otrosMgm | Select-Object -Unique | ForEach-Object { Escribir "         $_" "Yellow" }
+    Escribir "         Si con una terminal nueva 'mgm' sigue sin andar, borra o renombra esos." "Yellow"
 }
 
 Escribir ""
