@@ -17,7 +17,6 @@ from .commands import AYUDA_COMANDOS, SALIR, ejecutar_comando
 from .config import load_cookies, load_credentials, mgm_dir, save_credentials
 from .permissions import DEFAULT_MODE, MODES
 from .session import SessionStore
-from .transport import TransportError
 from .ui import MgmCompleter, PermissionAsker, make_console
 
 COOKIE_DEFECTO = "__Secure-1PSID"
@@ -152,11 +151,11 @@ def banner(app: App) -> Panel:
 
 
 async def mostrar_estado_de_cuenta(app: App) -> None:
-    """Aviso al arrancar: con qué cuenta de Gemini se está hablando, si es que hay alguna.
+    """Aviso instantáneo (SIN red) de qué cuenta hay configurada.
 
-    El objetivo del proyecto entero es no usar sin darte cuenta el endpoint
-    anónimo de g4f en vez de tu cuenta Pro — por eso esto se muestra siempre
-    que hay un transporte 'g4f' en juego, no solo en /diagnóstico.
+    A propósito no hace la verificación real (esa es /salud o --diagnostico):
+    abrir el REPL no puede depender de la red — si gemini.google.com tarda o
+    la red corporativa la bloquea, mgm debe seguir arrancando igual de rápido.
     """
     transporte = app.broker.transport
     if getattr(transporte, "name", "") != "g4f":
@@ -166,17 +165,9 @@ async def mostrar_estado_de_cuenta(app: App) -> None:
             "[warning]Usando el endpoint automático de g4f: NO es tu cuenta de Gemini.[/warning]"
         )
         return
-    try:
-        sesion = await transporte.verificar_sesion()
-    except TransportError as exc:
-        app.console.print(f"[apagado]No se pudo verificar la sesión de Gemini ({exc}).[/apagado]")
-        return
-    if sesion.valida:
-        app.console.print(f"[ok]Conectado a Gemini como {sesion.email or '(correo no detectado)'}[/ok]")
-    else:
-        app.console.print(
-            f"[error]Tu cookie de Gemini venció o fue rechazada.[/error] [apagado]{sesion.detalle}[/apagado]"
-        )
+    app.console.print(
+        "[apagado]Cookie de Gemini configurada — usa /salud para confirmar la cuenta conectada.[/apagado]"
+    )
 
 
 async def run_repl(app: App, home: Path) -> int:

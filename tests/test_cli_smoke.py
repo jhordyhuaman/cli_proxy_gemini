@@ -388,31 +388,24 @@ class TestBanner:
 
 
 class TestEstadoDeCuenta:
-    async def test_sesion_valida_muestra_el_correo(self, tmp_path, monkeypatch):
+    async def test_cookie_configurada_no_hace_llamadas_de_red(self, tmp_path, monkeypatch):
+        """Abrir mgm nunca debe depender de la red: eso es lo que rompió antes.
+
+        Si mostrar_estado_de_cuenta llamara a verificar_sesion (red real), esta
+        prueba fallaría porque _descargar_app_html reventaría al invocarse.
+        """
         import mgm.transport.g4f_cookie as mod
         from mgm.cli import mostrar_estado_de_cuenta
         from mgm.transport import G4FCookieTransport
 
-        monkeypatch.setattr(
-            mod, "_descargar_app_html",
-            lambda cookies: "<html>SNlM0e jhordyrx@gmail.com</html>",
-        )
+        def explota(cookies):
+            raise AssertionError("mostrar_estado_de_cuenta no debe tocar la red")
+
+        monkeypatch.setattr(mod, "_descargar_app_html", explota)
         app, buffer = app_de_prueba(tmp_path, ["x"])
         app.broker.set_transport(G4FCookieTransport({"__Secure-1PSID": "x"}))
         await mostrar_estado_de_cuenta(app)
-        assert "jhordyrx@gmail.com" in buffer.getvalue()
-
-    async def test_cookie_vencida_avisa_con_claridad(self, tmp_path, monkeypatch):
-        import mgm.transport.g4f_cookie as mod
-        from mgm.cli import mostrar_estado_de_cuenta
-        from mgm.transport import G4FCookieTransport
-
-        monkeypatch.setattr(mod, "_descargar_app_html", lambda cookies: "<html>anónimo</html>")
-        app, buffer = app_de_prueba(tmp_path, ["x"])
-        app.broker.set_transport(G4FCookieTransport({"__Secure-1PSID": "x"}))
-        await mostrar_estado_de_cuenta(app)
-        salida = buffer.getvalue().lower()
-        assert "venció" in salida or "rechazada" in salida
+        assert "/salud" in buffer.getvalue()
 
     async def test_proveedor_automatico_avisa_que_no_es_tu_cuenta(self, tmp_path):
         from mgm.cli import mostrar_estado_de_cuenta
