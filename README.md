@@ -98,6 +98,16 @@ proveedor `Gemini` (nunca cae en silencio a endpoints libres).
 Por defecto mgm usa `gemini-auto`, que es el nombre que enruta al proveedor que usa tu cookie.
 Ojo: el nombre suelto `gemini` **no existe** en g4f; mgm traduce ese alias por ti.
 
+**Para tareas de código, pide un Pro explícitamente.** `gemini-auto` deja que el servidor elija y
+en la práctica cae en un modelo *flash* (rápido y barato, pero flojo siguiendo formatos: parte mal
+los archivos y corta las respuestas a la mitad). `/modelo` te dice cuál respondió de verdad y te
+avisa si estás en un flash:
+
+```bash
+/modelo                     # ves el real, p. ej. "Respondiendo de verdad: gemini-3.6-flash"
+/modelo gemini-3.8-pro      # cámbialo en caliente
+```
+
 ```bash
 mgm --modelo gemini-2.5-pro     # al arrancar
 /modelo                         # ver el actual y los disponibles en tu g4f
@@ -128,10 +138,15 @@ mgm --actualizar                  # trae la última versión desde GitHub
 mgm --modo plan                   # arranca en modo solo lectura
 ```
 
-mgm **no abre un chat nuevo cada vez**: por defecto retoma tanto tu historial local como el mismo
-hilo de conversación en el servidor de Gemini (mismo `conversation_id`), así que iterar sobre el
-mismo encargo en la misma carpeta es literalmente el mismo chat. Usa `-n` cuando sí quieras
-arrancar de cero.
+mgm **retoma tu sesión**: el historial de la carpeta se guarda y se recarga solo, así que iterar
+sobre el mismo encargo continúa donde lo dejaste. Usa `-n` cuando sí quieras arrancar de cero.
+
+En el lado de Gemini, en cambio, cada llamada manda el contexto completo (y por eso aparecen
+chats nuevos en gemini.google.com). Es a propósito: existe la opción de reutilizar el mismo hilo
+del servidor (`conversacion_continua = true` en `~/.mgm/config.toml`), pero cuando se activa, g4f
+envía solo tu último mensaje y deja la memoria del lado de Gemini — el agente pierde su prompt de
+sistema a mitad de un encargo y empieza a romper el formato de herramientas. Déjalo apagado salvo
+que estés experimentando.
 
 Al arrancar la sesión interactiva, mgm te dice con qué cuenta estás hablando —
 `Conectado a Gemini como tu_correo@gmail.com`, o un aviso si estás en el endpoint

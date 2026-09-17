@@ -33,6 +33,17 @@ powershell -ExecutionPolicy Bypass -File installer\instalar.ps1   # idem Windows
 No hay linter ni build configurados. `g4f` **no** está instalado en `.venv` a propósito: se importa
 de forma perezosa y los tests corren siempre contra `FakeTransport`.
 
+Para reproducir un fallo REAL contra Gemini (con la cookie del usuario ya guardada), instálalo
+temporalmente y déjalo como estaba al terminar:
+
+```bash
+.venv/bin/pip install g4f      # reproducir en vivo
+.venv/bin/pip uninstall -y g4f # dejar el entorno como estaba
+```
+
+Vale la pena: los dos fallos más feos que ha tenido este proyecto (generador de g4f sin cerrar, y
+la continuidad de conversación rompiendo el contrato de herramientas) solo se vieron así.
+
 ## Arquitectura
 
 El sistema se apoya en dos decisiones que explican casi todo lo demás.
@@ -96,15 +107,18 @@ preguntas de permiso descoordinadas. `agent/subagent.py` es el lado padre; `ipc/
   `Model not found`. `resolver_modelo()` traduce los alias cómodos.
 - **El prompt del sistema no vive en `loop.messages`.** Se antepone en `_wire_messages()`, así que
   el historial persistido queda limpio y el prompt se puede refrescar entre turnos.
-- **mgm retoma la MISMA conversación de Gemini, no solo el historial local.** `Chunk.state` y
-  `Transport.stream(messages, state=...)` son el hueco genérico del puerto para esto — opaco y
-  opcional, así que `FakeTransport`/`GeminiCLITransport` lo ignoran sin problema.
-  `G4FCookieTransport` lo traduce al `conversation=`/`Conversation` reales de g4f (por eso cada
-  turno ya NO abre un chat nuevo en el servidor de Gemini). El estado vive en `AgentLoop.
-  conversation_state` (no en el transporte compartido) para que los subagentes, que comparten el
-  mismo broker que el agente principal, nunca hereden ni contaminen su hilo — cada `serve()` de
-  `SubagentSupervisor` es una conversación de Gemini aislada y de un solo uso. `SessionMeta.
-  conversation_state` lo persiste para que sobreviva a cerrar la terminal.
+- **El contexto completo viaja en CADA llamada, y eso no es negociable.** Existe el cableado para
+  reutilizar la conversación del servidor de Gemini (`Chunk.state`, `Transport.stream(state=...)`,
+  `AgentLoop.conversation_state`, `SessionMeta.conversation_state`, y el `conversation=` de g4f),
+  pero viene **apagado** (`conversacion_continua = false`). Motivo, verificado en vivo: en cuanto
+  se manda `conversation=`, g4f envía SOLO el último mensaje del usuario y delega la memoria en
+  Gemini — el modelo deja de ver el prompt de sistema y el contrato de herramientas a mitad de un
+  encargo, y empieza a emitir XML roto. Para un loop agéntico, la memoria la manda mgm.
+- **El generador de g4f se cierra SIEMPRE** (`_cerrar`, en el mismo hilo). Si se abandona, lo
+  cierra el recolector de basura más tarde en otro hilo: g4f intenta apagar ahí su event loop y
+  suelta `Cannot run the event loop while another loop is running` + `Unclosed client session`
+  por stderr, en cualquier momento — y en el REPL eso se come lo que el usuario está tecleando.
+  El REPL además envuelve el prompt en `patch_stdout()` como segunda línea de defensa.
 
 ### Mapa de módulos
 

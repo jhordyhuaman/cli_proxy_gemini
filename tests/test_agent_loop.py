@@ -297,6 +297,18 @@ class TestPromptDeSistema:
         p = build_system_prompt(default_registry())
         assert "pregunta" in p.lower() and "ambig" in p.lower()
 
+    def test_prohibe_etiquetas_ajenas_al_archivo(self):
+        """Gemini escribía </style> al final del .css y </script></body></html>
+        al final del .js: creía estar partiendo un único HTML."""
+        p = build_system_prompt(default_registry()).lower()
+        assert "</style>" in p and "</script>" in p
+
+    def test_pide_una_sola_herramienta_cuando_el_cuerpo_es_largo(self):
+        """Respuestas con varios archivos completos se cortaban a la mitad y
+        dejaban bloques <tool> sin cerrar."""
+        p = build_system_prompt(default_registry()).lower()
+        assert "una sola herramienta" in p or "una herramienta por respuesta" in p
+
     def test_pide_validar_de_verdad_antes_de_terminar(self):
         p = build_system_prompt(default_registry())
         minuscula = p.lower()

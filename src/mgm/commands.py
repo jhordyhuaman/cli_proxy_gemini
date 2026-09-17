@@ -89,6 +89,14 @@ async def cmd_modelo(app: App, resto: str) -> None:
     nuevo = resto.strip()
     if not nuevo:
         app.console.print(f"Modelo actual: [bold]{app.config.model}[/bold]")
+        if app.modelo_real:
+            app.console.print(f"[apagado]Respondiendo de verdad: {app.modelo_real}[/apagado]")
+            if "flash" in app.modelo_real.lower():
+                app.console.print(
+                    "[warning]Estás en un modelo rápido (flash): para tareas de código "
+                    "rinde bastante menos.[/warning]\n"
+                    "[apagado]Prueba: /modelo gemini-3.8-pro  (o gemini-2.5-pro)[/apagado]"
+                )
         disponibles = modelos_gemini_disponibles()
         if disponibles:
             app.console.print("[apagado]Disponibles en tu g4f:[/apagado]")

@@ -146,8 +146,10 @@ class AgentLoop:
             if not evento.closed:
                 resultado = ToolResult(
                     False,
-                    f"[ERROR] el bloque XML de {evento.name!r} quedó sin cerrar; "
-                    "vuelve a emitirlo completo con su </tool>",
+                    f"[ERROR] el bloque XML de {evento.name!r} quedó sin cerrar. "
+                    "Tu respuesta se cortó antes de terminarlo. Vuelve a emitir "
+                    f"SOLO esa llamada a {evento.name!r}, completa y con su "
+                    "</tool>, sin ninguna otra herramienta ni texto alrededor.",
                 )
                 self.on_event(ToolExecuted(call, resultado))
                 salidas.append(f"<{evento.name}> {resultado.output}")

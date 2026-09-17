@@ -8,12 +8,17 @@ capturarse, porque el proceso sigue vivo después de que la tool retorna.
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 
 from .base import Tool, ToolContext, ToolResult
 
 DEFAULT_TIMEOUT = 120.0
 MAX_OUTPUT_CHARS = 30_000
+
+
+def _es_windows() -> bool:
+    return os.name == "nt"
 
 
 class BashTool(Tool):
@@ -93,9 +98,15 @@ class BashTool(Tool):
         finally:
             # El hijo ya heredó el descriptor; el padre no necesita mantenerlo abierto.
             log_file.close()
+        # El modelo copia estas sugerencias literalmente, así que tienen que ser
+        # las del sistema donde corre: en cmd.exe no existen 'cat' ni 'kill'.
+        if _es_windows():
+            ver, detener = f"type {log_path}", f"taskkill /PID {proc.pid} /F"
+        else:
+            ver, detener = f"cat {log_path}", f"kill {proc.pid}"
         return ToolResult(
             True,
             f"[EN SEGUNDO PLANO] pid={proc.pid}\n"
             f"salida: {log_path}\n"
-            f"Para revisarla: bash \"cat {log_path}\" · Para detenerlo: bash \"kill {proc.pid}\"",
+            f'Para revisarla: bash "{ver}" · Para detenerlo: bash "{detener}"',
         )

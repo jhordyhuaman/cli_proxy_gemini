@@ -185,10 +185,12 @@ class G4FCookieTransport:
         *,
         model: str = MODELO_DEFECTO,
         provider: str = PROVEEDOR_COOKIE,
+        conversacion_continua: bool = False,
     ):
         self._cookies = cookies
         self._model = resolver_modelo(model)
         self._provider = (provider or PROVEEDOR_COOKIE).strip()
+        self._conversacion_continua = bool(conversacion_continua)
 
     @property
     def model(self) -> str:
@@ -211,10 +213,12 @@ class G4FCookieTransport:
             # en silencio a un endpoint libre anónimo, y creerías que estás
             # usando tu cuenta Pro cuando no es así.
             extra["provider"] = self._provider
-        if self._provider.lower() == PROVEEDOR_COOKIE.lower():
-            # Le pasamos de vuelta la Conversation de la llamada anterior para
-            # que Gemini continúe el MISMO chat en su servidor, en vez de abrir
-            # uno nuevo cada vez (que es lo que pasa si conversation=None).
+        if self._conversacion_continua and self._provider.lower() == PROVEEDOR_COOKIE.lower():
+            # Continuar el MISMO chat en el servidor de Gemini. OJO: en cuanto
+            # se manda `conversation`, g4f envía SOLO el último mensaje del
+            # usuario y delega la memoria en Gemini. Para un loop agéntico eso
+            # es veneno: el modelo deja de ver el prompt de sistema y el
+            # contrato de herramientas. Por eso está apagado por defecto.
             extra["conversation"] = _conversacion_desde_estado(state)
             extra["return_conversation"] = True
         return g4f.ChatCompletion.create(
@@ -246,11 +250,30 @@ class G4FCookieTransport:
                 return pieza
         return _SENTINEL
 
+    @staticmethod
+    def _cerrar(generator) -> None:
+        """Cierra el generador de g4f en ESTE hilo, pase lo que pase.
+
+        Si se abandona, lo cierra el recolector de basura más tarde y en otro
+        hilo: g4f intenta apagar ahí su propio event loop y revienta con
+        "Cannot run the event loop while another loop is running" + deja la
+        sesión de aiohttp abierta. Ese ruido sale por stderr en cualquier
+        momento y en el REPL se come lo que el usuario está escribiendo.
+        """
+        cerrar = getattr(generator, "close", None)
+        if cerrar is None:
+            return
+        try:
+            cerrar()
+        except Exception:
+            pass
+
     async def stream(
         self, messages: list[Message], *, state: dict | None = None
     ) -> AsyncIterator[Chunk]:
         if not self._cookies:
             raise AuthError("no hay cookie configurada en ~/.mgm/credentials.json")
+        generator = None
         try:
             generator = await asyncio.to_thread(self._create_stream, messages, state)
             ultimo_estado: dict | None = None
@@ -266,6 +289,9 @@ class G4FCookieTransport:
                 yield Chunk(text="", state=ultimo_estado)
         except Exception as exc:
             raise _classify_error(exc) from exc
+        finally:
+            if generator is not None:
+                await asyncio.to_thread(self._cerrar, generator)
 
     async def verificar_sesion(self) -> SesionInfo:
         """Verificación real de sesión contra gemini.google.com/app.
@@ -319,11 +345,16 @@ class G4FCookieTransport:
                 if sesion.email
                 else "sesión autenticada (tu cuenta; email no detectado)"
             )
+        generator = None
         try:
             _import_g4f()
             probe = [Message(role="user", content="Responde solo: ok")]
             generator = await asyncio.to_thread(self._create_stream, probe)
             piece = await asyncio.to_thread(self._next_piece, generator)
+            # La sonda solo necesita la PRIMERA pieza de texto; el resto del
+            # stream se descarta, así que hay que cerrarlo aquí mismo.
+            await asyncio.to_thread(self._cerrar, generator)
+            generator = None
             if piece is _SENTINEL:
                 return Health(
                     ok=False,
@@ -344,3 +375,6 @@ class G4FCookieTransport:
             return Health(ok=False, detail=str(exc))
         except Exception as exc:
             return Health(ok=False, detail=str(_classify_error(exc)))
+        finally:
+            if generator is not None:
+                await asyncio.to_thread(self._cerrar, generator)

@@ -31,6 +31,11 @@ class Config:
     provider: str = "Gemini"
     max_retries: int = 3
     base_delay: float = 0.5
+    #: Reutilizar la MISMA conversación en el servidor de Gemini entre llamadas.
+    #: Apagado a propósito: cuando se activa, g4f manda solo el último mensaje y
+    #: deja la memoria del lado de Gemini, así que el agente pierde su prompt de
+    #: sistema y el contrato de herramientas a mitad de un encargo.
+    conversacion_continua: bool = False
 
 
 _FIELD_CASTS = {f.name: f.type for f in fields(Config)}
@@ -47,12 +52,17 @@ def _read_toml(path: Path) -> dict:
         return tomllib.load(fh)
 
 
+_VERDADEROS = ("1", "true", "si", "sí", "yes", "on")
+
+
 def _cast(key: str, raw: str):
     target = _FIELD_CASTS.get(key, str)
     if target == "int":
         return int(raw)
     if target == "float":
         return float(raw)
+    if target == "bool":
+        return str(raw).strip().lower() in _VERDADEROS
     return raw
 
 

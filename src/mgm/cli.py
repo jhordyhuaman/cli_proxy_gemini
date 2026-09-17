@@ -9,6 +9,7 @@ from pathlib import Path
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.patch_stdout import patch_stdout
 from rich.panel import Panel
 
 from . import __version__
@@ -192,7 +193,11 @@ async def run_repl(app: App, home: Path) -> int:
 
     while True:
         try:
-            entrada = (await session.prompt_async("\nmgm> ")).strip()
+            # patch_stdout redirige lo que escupan stdout/stderr MIENTRAS esperas
+            # (avisos sueltos de librerías, por ejemplo) a una línea por encima
+            # del prompt, en vez de dejar que se mezclen con lo que tecleas.
+            with patch_stdout():
+                entrada = (await session.prompt_async("\nmgm> ")).strip()
         except KeyboardInterrupt:
             continue
         except EOFError:

@@ -26,6 +26,35 @@ def test_global_layer(tmp_path):
     assert config.max_retries == 3
 
 
+def test_conversacion_continua_viene_apagada(tmp_path):
+    config = load_config(home=tmp_path / "home", cwd=tmp_path / "proj", environ={})
+    assert config.conversacion_continua is False
+
+
+def test_conversacion_continua_se_puede_encender_por_toml(tmp_path):
+    home = tmp_path / "home"
+    (home / ".mgm").mkdir(parents=True)
+    (home / ".mgm" / "config.toml").write_text("conversacion_continua = true\n")
+    config = load_config(home=home, cwd=tmp_path / "proj", environ={})
+    assert config.conversacion_continua is True
+
+
+def test_conversacion_continua_se_puede_encender_por_entorno(tmp_path):
+    config = load_config(
+        home=tmp_path / "home", cwd=tmp_path / "proj",
+        environ={"MGM_CONVERSACION_CONTINUA": "true"},
+    )
+    assert config.conversacion_continua is True
+
+
+def test_un_booleano_de_entorno_en_falso_no_se_lee_como_verdadero(tmp_path):
+    config = load_config(
+        home=tmp_path / "home", cwd=tmp_path / "proj",
+        environ={"MGM_CONVERSACION_CONTINUA": "false"},
+    )
+    assert config.conversacion_continua is False
+
+
 def test_project_layer_overrides_global(tmp_path):
     home = tmp_path / "home"
     proj = tmp_path / "proj"

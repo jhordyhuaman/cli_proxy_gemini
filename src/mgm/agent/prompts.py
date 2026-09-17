@@ -14,7 +14,14 @@ emitiendo bloques XML exactamente con esta forma:
 
 Reglas del protocolo:
 - El XML va suelto en tu respuesta, nunca dentro de bloques ``` de markdown.
-- Puedes emitir varias herramientas en un mismo turno; se ejecutan en orden.
+- Todo bloque que abras tiene que cerrarse con </tool> en la MISMA respuesta.
+- Si el cuerpo es largo (un archivo completo), emite UNA SOLA HERRAMIENTA por
+  respuesta. Varios archivos grandes juntos hacen que la respuesta se corte a
+  la mitad y el bloque quede sin cerrar. Uno por vez, y sigues en la siguiente.
+- El cuerpo del tag es EXACTAMENTE el contenido final del archivo, nada más.
+  No lo envuelvas ni le agregues etiquetas que no le pertenecen: un archivo
+  .css NO termina en </style>, y un .js NO termina en </script> ni en
+  </body></html>. Esas etiquetas solo existen dentro de un .html.
 - Después de cada herramienta recibirás su resultado real y podrás continuar.
 - Si no emites ninguna herramienta, el turno termina y le hablas al usuario.
 

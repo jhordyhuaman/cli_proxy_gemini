@@ -44,7 +44,12 @@ def build_transport(nombre: str, config: Config, cookies: dict[str, str]) -> Tra
     if nombre == "fake":
         return FakeTransport()
     if nombre == "g4f":
-        return G4FCookieTransport(cookies, model=config.model, provider=config.provider)
+        return G4FCookieTransport(
+            cookies,
+            model=config.model,
+            provider=config.provider,
+            conversacion_continua=config.conversacion_continua,
+        )
     if nombre == "gemini-cli":
         return GeminiCLITransport()
     raise ValueError(f"transporte desconocido: {nombre!r}. Opciones: {', '.join(TRANSPORTES)}")
@@ -179,11 +184,22 @@ class App:
             skills=self.skills.render_catalog(),
         )
 
+    @property
+    def modelo_real(self) -> str:
+        """El modelo que Gemini usó de verdad, no el alias que pediste.
+
+        'gemini-auto' enruta del lado del servidor y en la práctica cae en un
+        flash; el nombre real viene en el estado de conversación que devuelve.
+        """
+        estado = self.loop.conversation_state or {}
+        return str(estado.get("model") or "")
+
     def resumen_estado(self) -> str:
         usado = self.budget.used(self.loop.messages)
         pct = int(self.budget.ratio(self.loop.messages) * 100)
+        modelo = f" · modelo {self.modelo_real}" if self.modelo_real else ""
         return (
-            f"transporte {self.broker.transport.name} · modo {self.permissions.mode} · "
+            f"transporte {self.broker.transport.name}{modelo} · modo {self.permissions.mode} · "
             f"contexto {usado}/{self.budget.limit} ({pct}%) · sesión {self.session.meta.id}"
         )
 

@@ -206,6 +206,27 @@ class TestComandos:
         await ejecutar_comando(app, "/limpiar")
         assert app.loop.conversation_state is None
 
+    async def test_el_resumen_muestra_el_modelo_que_de_verdad_respondio(self, tmp_path):
+        """'gemini-auto' enruta a lo que Gemini quiera (en la práctica, flash).
+        Hay que ver el modelo real, no el alias que pediste."""
+        app, _ = app_de_prueba(tmp_path, ["x"])
+        app.loop.conversation_state = {"model": "gemini-3.6-flash"}
+        assert "gemini-3.6-flash" in app.resumen_estado()
+
+    async def test_modelo_avisa_si_estas_en_un_flash(self, tmp_path):
+        app, buffer = app_de_prueba(tmp_path, ["x"])
+        app.loop.conversation_state = {"model": "gemini-3.6-flash"}
+        await ejecutar_comando(app, "/modelo")
+        assert "Respondiendo de verdad: gemini-3.6-flash" in buffer.getvalue()
+
+    async def test_modelo_no_avisa_de_flash_si_ya_estas_en_un_pro(self, tmp_path):
+        app, buffer = app_de_prueba(tmp_path, ["x"])
+        app.loop.conversation_state = {"model": "gemini-3.8-pro"}
+        await ejecutar_comando(app, "/modelo")
+        salida = buffer.getvalue()
+        assert "Respondiendo de verdad: gemini-3.8-pro" in salida
+        assert "tareas de código" not in salida
+
     async def test_contexto_muestra_el_gasto(self, tmp_path):
         app, buffer = app_de_prueba(tmp_path, ["x"])
         await ejecutar_comando(app, "/contexto")

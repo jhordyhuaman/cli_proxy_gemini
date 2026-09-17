@@ -32,10 +32,31 @@ def fake_g4f(piezas, llamadas: list):
     return _G4F()
 
 
+async def test_por_defecto_NO_reutiliza_la_conversacion_de_gemini(monkeypatch):
+    """El loop agéntico necesita mandar el contexto completo en cada llamada.
+
+    Si se reutiliza la conversación del servidor, g4f manda SOLO el último
+    mensaje y delega la memoria en Gemini: el modelo pierde el prompt de
+    sistema y el contrato de herramientas, y el chat queda incoherente.
+    Verificado en vivo: por eso viene apagado.
+    """
+    llamadas: list = []
+    monkeypatch.setattr(mod, "_import_g4f", lambda: fake_g4f(["ok"], llamadas))
+    transporte = G4FCookieTransport({"__Secure-1PSID": "x"})
+    estado = {
+        "conversation_id": "c1", "response_id": "r1",
+        "choice_id": "ch1", "model": "gemini-auto", "turn_index": 2,
+    }
+
+    _ = [c async for c in transporte.stream([Message(role="user", content="hi")], state=estado)]
+
+    assert "conversation" not in llamadas[0]
+
+
 async def test_sin_state_previo_manda_conversation_none(monkeypatch):
     llamadas: list = []
     monkeypatch.setattr(mod, "_import_g4f", lambda: fake_g4f(["hola"], llamadas))
-    transporte = G4FCookieTransport({"__Secure-1PSID": "x"})
+    transporte = G4FCookieTransport({"__Secure-1PSID": "x"}, conversacion_continua=True)
 
     chunks = [c async for c in transporte.stream([Message(role="user", content="hi")])]
 
@@ -47,7 +68,7 @@ async def test_sin_state_previo_manda_conversation_none(monkeypatch):
 async def test_state_previo_se_manda_como_conversation(monkeypatch):
     llamadas: list = []
     monkeypatch.setattr(mod, "_import_g4f", lambda: fake_g4f(["ok"], llamadas))
-    transporte = G4FCookieTransport({"__Secure-1PSID": "x"})
+    transporte = G4FCookieTransport({"__Secure-1PSID": "x"}, conversacion_continua=True)
     estado = {
         "conversation_id": "c1", "response_id": "r1",
         "choice_id": "ch1", "model": "gemini-auto", "turn_index": 2,
