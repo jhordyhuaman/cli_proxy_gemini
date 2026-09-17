@@ -216,12 +216,15 @@ def build_app(
     environ: dict | None = None,
     max_iterations: int = 25,
     asker=None,
+    chat_unico: bool = False,
 ) -> App:
     config = load_config(home=home, cwd=workspace, environ=environ)
     if transport:
         config.transport = transport
     if modelo:
         config.model = modelo
+    if chat_unico:
+        config.conversacion_continua = True
     cookies = load_cookies(home)
     broker = InferenceBroker(
         build_transport(elegir_transporte(config, cookies), config, cookies),

@@ -57,6 +57,21 @@ class TestTurnoCompleto:
         assert recargada.meta.turns == 1
         assert recargada.meta.title == "hola"
 
+    async def test_chat_unico_enciende_la_conversacion_continua(self, tmp_path):
+        console, _ = consola()
+        app = build_app(
+            console=console, workspace=tmp_path, home=tmp_path / "home",
+            transport="fake", chat_unico=True,
+        )
+        assert app.config.conversacion_continua is True
+
+    async def test_sin_chat_unico_la_conversacion_continua_sigue_apagada(self, tmp_path):
+        console, _ = consola()
+        app = build_app(
+            console=console, workspace=tmp_path, home=tmp_path / "home", transport="fake",
+        )
+        assert app.config.conversacion_continua is False
+
     async def test_el_conversation_state_se_persiste_tras_el_turno(self, tmp_path):
         from mgm.transport import Chunk
 
@@ -260,6 +275,10 @@ class TestArgumentos:
     def test_nueva_fuerza_sesion_limpia(self):
         assert parse_args(["-n"]).nueva is True
         assert parse_args([]).nueva is False
+
+    def test_bandera_chat_unico(self):
+        assert parse_args(["--chat-unico"]).chat_unico is True
+        assert parse_args([]).chat_unico is False
 
     def test_bandera_actualizar(self):
         assert parse_args(["--actualizar"]).actualizar is True

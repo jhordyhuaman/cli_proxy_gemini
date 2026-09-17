@@ -96,7 +96,84 @@ async def test_captura_la_conversation_devuelta_como_chunk_de_estado(monkeypatch
     assert chunks[-1].state == {
         "conversation_id": "c2", "response_id": "r2",
         "choice_id": "ch2", "model": "gemini-auto", "turn_index": 3,
+        "enviados": 1,
     }
+
+
+class TestUnSoloChatSinPerderElContrato:
+    """Mismo chat en Gemini Y contexto bajo control de mgm.
+
+    Con `conversation=` a secas, g4f manda SOLO el último mensaje del usuario:
+    el modelo se queda sin prompt de sistema y rompe el formato de
+    herramientas. Con el transcript completo cada vez, el hilo del servidor
+    crece al cuadrado. La salida: pasar `prompt=` explícito con el sistema
+    (que es el contrato) + lo que el modelo todavía no ha visto.
+    """
+
+    def _transporte(self, monkeypatch, llamadas, piezas=("ok",)):
+        monkeypatch.setattr(mod, "_import_g4f", lambda: fake_g4f(list(piezas), llamadas))
+        return G4FCookieTransport({"__Secure-1PSID": "x"}, conversacion_continua=True)
+
+    async def test_la_primera_llamada_deja_que_g4f_mande_todo(self, monkeypatch):
+        llamadas: list = []
+        transporte = self._transporte(monkeypatch, llamadas)
+
+        _ = [c async for c in transporte.stream([Message(role="user", content="hola")])]
+
+        assert llamadas[0]["conversation"] is None
+        assert "prompt" not in llamadas[0]
+
+    async def test_al_continuar_manda_sistema_mas_solo_lo_nuevo(self, monkeypatch):
+        llamadas: list = []
+        transporte = self._transporte(monkeypatch, llamadas)
+        estado = {
+            "conversation_id": "c1", "response_id": "r1", "choice_id": "ch1",
+            "model": "gemini-auto", "turn_index": 1, "enviados": 2,
+        }
+        mensajes = [
+            Message(role="system", content="CONTRATO DE HERRAMIENTAS"),
+            Message(role="user", content="viejo 1"),
+            Message(role="assistant", content="viejo 2"),
+            Message(role="user", content="nuevo de verdad"),
+        ]
+
+        _ = [c async for c in transporte.stream(mensajes, state=estado)]
+
+        prompt = llamadas[0]["prompt"]
+        assert "CONTRATO DE HERRAMIENTAS" in prompt, "el contrato debe ir siempre"
+        assert "nuevo de verdad" in prompt
+        assert "viejo 1" not in prompt and "viejo 2" not in prompt
+
+    async def test_usa_el_mismo_formato_de_roles_que_g4f(self, monkeypatch):
+        llamadas: list = []
+        transporte = self._transporte(monkeypatch, llamadas)
+        estado = {
+            "conversation_id": "c1", "response_id": "r", "choice_id": "ch",
+            "model": "gemini-auto", "enviados": 0,
+        }
+
+        _ = [
+            c async for c in transporte.stream(
+                [Message(role="user", content="hola")], state=estado
+            )
+        ]
+
+        assert "User: hola" in llamadas[0]["prompt"]
+
+    async def test_apunta_cuantos_mensajes_ya_vio_gemini(self, monkeypatch):
+        conv = FalsaConversacion("c9", "r9", "ch9", "gemini-auto", 1)
+        llamadas: list = []
+        transporte = self._transporte(monkeypatch, llamadas, piezas=("hola", conv))
+        mensajes = [
+            Message(role="system", content="contrato"),
+            Message(role="user", content="uno"),
+            Message(role="assistant", content="dos"),
+        ]
+
+        chunks = [c async for c in transporte.stream(mensajes)]
+
+        # Dos mensajes no-sistema quedaron del lado de Gemini.
+        assert chunks[-1].state["enviados"] == 2
 
 
 async def test_no_manda_conversation_si_el_proveedor_no_es_gemini(monkeypatch):

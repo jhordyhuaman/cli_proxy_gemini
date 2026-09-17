@@ -27,11 +27,14 @@ OPCIONES = {
     "4": DENY,
 }
 
-AYUDA = (
-    "[bold]s[/bold]í (una vez) · "
-    "[bold]a[/bold]utorizar toda la sesión · "
-    "[bold]p[/bold]ermitir siempre en este proyecto · "
-    "[bold]n[/bold]o"
+#: Menú numerado, en el orden en que se ofrece. Las letras de siempre
+#: (s/a/p/n) siguen valiendo, pero lo que se muestra son números: es lo que
+#: la gente espera de un prompt de terminal y no hay que adivinar nada.
+MENU = (
+    ("1", "Sí", "(Enter)"),
+    ("2", "Sí, y no preguntes más en esta sesión", ""),
+    ("3", "Sí, y no preguntes más en este proyecto", ""),
+    ("4", "No", ""),
 )
 
 
@@ -44,26 +47,31 @@ class PermissionAsker:
         self.workspace = workspace
 
     async def __call__(self, call, resumen: str, decision) -> str:
-        cuerpo = Text(resumen)
         diff = diff_de_llamada(call, self.workspace)
-        self.console.print(
-            Panel(
-                cuerpo,
-                title="[warning]¿Autorizas esta acción?[/warning]",
-                border_style="warning",
-                title_align="left",
-            )
-        )
         if diff is not None:
-            self.console.print(diff)
-        self.console.print(f"  {AYUDA}")
-        try:
-            respuesta = (
-                await self.session.prompt_async(
-                    "¿permites? [S]í / [n]o / [a]=sí y no preguntes en esta sesión / "
-                    "[p]=sí y no preguntes nunca en este proyecto → "
+            self.console.print(
+                Panel(
+                    diff,
+                    title=f"[warning]{resumen}[/warning]",
+                    border_style="warning",
+                    title_align="left",
                 )
-            ).strip().lower()
+            )
+        else:
+            self.console.print(
+                Panel(
+                    Text(resumen),
+                    title="[warning]¿Autorizas esta acción?[/warning]",
+                    border_style="warning",
+                    title_align="left",
+                )
+            )
+
+        for tecla, etiqueta, pista in MENU:
+            sufijo = f" [apagado]{pista}[/apagado]" if pista else ""
+            self.console.print(f"  [bold]{tecla}.[/bold] {etiqueta}{sufijo}")
+        try:
+            respuesta = (await self.session.prompt_async("  › ")).strip().lower()
         except (EOFError, KeyboardInterrupt):
             return DENY
         return OPCIONES.get(respuesta, DENY)

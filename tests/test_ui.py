@@ -115,24 +115,53 @@ class TestPermissionAsker:
         from mgm.ui.prompt import PermissionAsker
 
         sesion = SesionFalsa(respuesta)
-        console = make_console(file=io.StringIO(), force_terminal=False)
+        buffer = io.StringIO()
+        console = make_console(file=buffer, force_terminal=False, width=90)
         asker = PermissionAsker(console, sesion, Path("/tmp"))
-        return asker, sesion
+        return asker, sesion, buffer
 
-    async def test_el_texto_del_prompt_explica_cada_letra_no_solo_las_muestra(self):
-        asker, sesion = self._asker()
-        await asker(ToolCall("bash", {"command": "ls"}), "ejecutar: ls", Decision("ask", "x"))
-        texto = sesion.textos_pedidos[0]
-        # No basta con "[s/a/p/n]": cada letra debe explicar qué hace, para no
-        # verse como "letras sin sentido" (la confusión real que reportaron).
-        assert "no" in texto.lower()
-        assert "sesión" in texto.lower()
-        assert "proyecto" in texto.lower()
+    async def _preguntar(self, asker, resumen="ejecutar: ls"):
+        return await asker(ToolCall("bash", {"command": "ls"}), resumen, Decision("ask", "x"))
 
-    async def test_sigue_devolviendo_lo_que_el_usuario_eligio(self):
-        asker, _ = self._asker(respuesta="a")
-        resultado = await asker(ToolCall("bash", {"command": "ls"}), "ejecutar: ls", Decision("ask", "x"))
-        assert resultado == ALLOW_SESSION
+    async def test_presenta_las_opciones_como_menu_numerado(self):
+        asker, _, buffer = self._asker()
+        await self._preguntar(asker)
+        salida = buffer.getvalue()
+        assert "1." in salida and "2." in salida and "3." in salida and "4." in salida
+        assert "Sí" in salida and "No" in salida
+
+    async def test_cada_opcion_dice_qué_hace_en_palabras(self):
+        asker, _, buffer = self._asker()
+        await self._preguntar(asker)
+        salida = buffer.getvalue().lower()
+        assert "esta sesión" in salida
+        assert "este proyecto" in salida
+
+    async def test_no_repite_el_resumen_dos_veces(self):
+        """Antes salía en la línea de la herramienta y otra vez en el panel."""
+        asker, _, buffer = self._asker()
+        await self._preguntar(asker, resumen="ejecutar: ls -la")
+        assert buffer.getvalue().count("ls -la") == 1
+
+    async def test_el_numero_1_autoriza_una_vez(self):
+        asker, _, _ = self._asker(respuesta="1")
+        assert await self._preguntar(asker) == ALLOW_ONCE
+
+    async def test_enter_a_secas_autoriza_una_vez(self):
+        asker, _, _ = self._asker(respuesta="")
+        assert await self._preguntar(asker) == ALLOW_ONCE
+
+    async def test_el_numero_2_autoriza_toda_la_sesion(self):
+        asker, _, _ = self._asker(respuesta="2")
+        assert await self._preguntar(asker) == ALLOW_SESSION
+
+    async def test_el_numero_4_deniega(self):
+        asker, _, _ = self._asker(respuesta="4")
+        assert await self._preguntar(asker) == DENY
+
+    async def test_las_letras_de_siempre_siguen_funcionando(self):
+        asker, _, _ = self._asker(respuesta="a")
+        assert await self._preguntar(asker) == ALLOW_SESSION
 
 
 class TestAutocompletado:

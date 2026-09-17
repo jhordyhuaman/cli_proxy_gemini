@@ -116,6 +116,37 @@ def _conversacion_desde_estado(state: dict | None) -> "_EstadoConversacion | Non
     )
 
 
+def _formatear_para_gemini(mensajes: list[Message]) -> str:
+    """Mismo formato que el `format_prompt` de g4f: 'Rol: contenido' por línea.
+
+    Importa que sea idéntico: si a mitad de una conversación le cambiamos el
+    formato al modelo, se desorienta.
+    """
+    return "\n".join(
+        f"{m.role.capitalize()}: {m.content}" for m in mensajes if m.content.strip()
+    )
+
+
+def _mensajes_no_sistema(mensajes: list[Message]) -> list[Message]:
+    return [m for m in mensajes if m.role != "system"]
+
+
+def _prompt_incremental(mensajes: list[Message], state: dict | None) -> str:
+    """El prompt de sistema (el contrato) + lo que Gemini todavía no ha visto.
+
+    Sin esto hay que elegir entre dos males: con `conversation=` a secas g4f
+    manda solo el último mensaje y el modelo pierde el contrato de
+    herramientas; con el transcript entero, el hilo del servidor crece al
+    cuadrado. Mandando sistema + delta se conserva un solo chat, el contrato
+    siempre presente, y crecimiento lineal.
+    """
+    sistema = [m for m in mensajes if m.role == "system"]
+    resto = _mensajes_no_sistema(mensajes)
+    ya_vistos = int((state or {}).get("enviados") or 0)
+    nuevos = resto[ya_vistos:] or resto[-1:]
+    return _formatear_para_gemini(sistema + nuevos)
+
+
 def _estado_desde_conversacion(conversacion: object) -> dict:
     return {
         "conversation_id": conversacion.conversation_id,
@@ -214,13 +245,16 @@ class G4FCookieTransport:
             # usando tu cuenta Pro cuando no es así.
             extra["provider"] = self._provider
         if self._conversacion_continua and self._provider.lower() == PROVEEDOR_COOKIE.lower():
-            # Continuar el MISMO chat en el servidor de Gemini. OJO: en cuanto
-            # se manda `conversation`, g4f envía SOLO el último mensaje del
-            # usuario y delega la memoria en Gemini. Para un loop agéntico eso
-            # es veneno: el modelo deja de ver el prompt de sistema y el
-            # contrato de herramientas. Por eso está apagado por defecto.
-            extra["conversation"] = _conversacion_desde_estado(state)
+            # Continuar el MISMO chat en el servidor de Gemini en vez de abrir
+            # uno nuevo por llamada.
+            conversacion = _conversacion_desde_estado(state)
+            extra["conversation"] = conversacion
             extra["return_conversation"] = True
+            if conversacion is not None:
+                # `prompt` explícito le gana a la lógica de g4f, que con una
+                # conversación activa mandaría SOLO el último mensaje del
+                # usuario y dejaría al modelo sin el contrato de herramientas.
+                extra["prompt"] = _prompt_incremental(messages, state)
         return g4f.ChatCompletion.create(
             model=self._model,
             messages=[{"role": m.role, "content": m.content} for m in messages],
@@ -285,6 +319,9 @@ class G4FCookieTransport:
                     yield Chunk(text=piece)
                 else:
                     ultimo_estado = _estado_desde_conversacion(piece)
+                    # Lo que a partir de ahora ya vive del lado de Gemini: en la
+                    # próxima llamada solo hay que mandarle lo que venga después.
+                    ultimo_estado["enviados"] = len(_mensajes_no_sistema(messages))
             if ultimo_estado is not None:
                 yield Chunk(text="", state=ultimo_estado)
         except Exception as exc:

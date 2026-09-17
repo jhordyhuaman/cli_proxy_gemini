@@ -62,6 +62,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--sesiones", action="store_true", help="lista las sesiones guardadas y termina")
     p.add_argument("--actualizar", action="store_true",
                    help="trae la última versión desde GitHub y termina")
+    p.add_argument("--chat-unico", dest="chat_unico", action="store_true",
+                   help="EXPERIMENTAL: mantén un solo chat en gemini.google.com para "
+                        "toda la sesión, en vez de uno por llamada")
     p.add_argument("--diagnostico", action="store_true",
                    help="comprueba que mgm funciona en esta máquina y termina")
     p.add_argument("--con-red", action="store_true",
@@ -262,6 +265,7 @@ async def _main(argv: list[str] | None = None) -> int:
         modelo=args.modelo,
         session=sesion,
         max_iterations=args.max_iteraciones,
+        chat_unico=args.chat_unico,
     )
 
     suelto = " ".join(args.prompt).strip()
