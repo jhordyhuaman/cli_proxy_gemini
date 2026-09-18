@@ -253,6 +253,32 @@ class TestLimitesYFallos:
         assert loop.messages[2].content == "segundo"
 
 
+class TestProteccionContraBucles:
+    """Si el modelo repite el mismo bloque roto, no tiene sentido gastar las 25
+    iteraciones: en una sesión real se comió 14 seguidas sin avanzar nada."""
+
+    async def test_corta_el_turno_si_repite_xml_sin_cerrar(self, ws):
+        guion = ['<tool name="bash">curl -s '] * 10
+        loop, _ = build(guion, workspace=ws, max_iterations=10)
+
+        salida = await loop.run_turn("levanta el servidor")
+
+        assert salida.reason == "protocolo"
+        assert salida.iterations <= 4, "debería rendirse pronto, no agotar el turno"
+
+    async def test_un_fallo_suelto_no_corta_nada(self, ws):
+        guion = [
+            '<tool name="bash">curl -s ',
+            '<tool name="bash">echo hola</tool>',
+            "listo",
+        ]
+        loop, _ = build(guion, workspace=ws, max_iterations=10)
+
+        salida = await loop.run_turn("haz algo")
+
+        assert salida.reason == "respuesta"
+
+
 class TestContinuidadDeConversacion:
     """El loop debe reenviar y actualizar el conversation_state del transporte,
     para que g4f/Gemini continúe el mismo chat en vez de abrir uno nuevo."""
@@ -296,6 +322,12 @@ class TestPromptDeSistema:
     def test_pide_preguntar_ante_encargos_ambiguos(self):
         p = build_system_prompt(default_registry())
         assert "pregunta" in p.lower() and "ambig" in p.lower()
+
+    def test_prohibe_urls_con_esquema_dentro_de_las_herramientas(self):
+        """Verificado en vivo: una URL con http:// dentro de un <tool> hace que
+        el proveedor corte el stream justo ahí y el bloque quede sin cerrar."""
+        p = build_system_prompt(default_registry()).lower()
+        assert "http://" in p and "localhost:" in p
 
     def test_prohibe_etiquetas_ajenas_al_archivo(self):
         """Gemini escribía </style> al final del .css y </script></body></html>

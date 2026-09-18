@@ -31,11 +31,11 @@ class Config:
     provider: str = "Gemini"
     max_retries: int = 3
     base_delay: float = 0.5
-    #: Reutilizar la MISMA conversación en el servidor de Gemini entre llamadas.
-    #: Apagado a propósito: cuando se activa, g4f manda solo el último mensaje y
-    #: deja la memoria del lado de Gemini, así que el agente pierde su prompt de
-    #: sistema y el contrato de herramientas a mitad de un encargo.
-    conversacion_continua: bool = False
+    #: Reutilizar la MISMA conversación en el servidor de Gemini entre llamadas,
+    #: en vez de abrir un chat nuevo en gemini.google.com por cada una.
+    #: mgm sigue mandando el contexto él mismo (prompt de sistema + lo que el
+    #: modelo aún no vio), así que no pierde el contrato de herramientas.
+    conversacion_continua: bool = True
 
 
 _FIELD_CASTS = {f.name: f.type for f in fields(Config)}

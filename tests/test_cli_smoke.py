@@ -65,12 +65,12 @@ class TestTurnoCompleto:
         )
         assert app.config.conversacion_continua is True
 
-    async def test_sin_chat_unico_la_conversacion_continua_sigue_apagada(self, tmp_path):
+    async def test_un_solo_chat_de_gemini_es_el_comportamiento_por_defecto(self, tmp_path):
         console, _ = consola()
         app = build_app(
             console=console, workspace=tmp_path, home=tmp_path / "home", transport="fake",
         )
-        assert app.config.conversacion_continua is False
+        assert app.config.conversacion_continua is True
 
     async def test_el_conversation_state_se_persiste_tras_el_turno(self, tmp_path):
         from mgm.transport import Chunk

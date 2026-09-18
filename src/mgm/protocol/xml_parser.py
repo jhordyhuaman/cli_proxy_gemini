@@ -34,12 +34,41 @@ class ToolStartEvent:
     attrs: dict[str, str]
 
 
+#: Gemini convierte las URLs que aparecen dentro de una herramienta en enlaces
+#: markdown: lo que el modelo quiso escribir como `https://x.com` llega como
+#: `[https://x.com](https://x.com)`. Si no se deshace, el archivo se escribe
+#: corrupto. Verificado en vivo contra la cuenta real.
+_ENLACE_RE = re.compile(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
+
+
+def desenlazar(texto: str) -> str:
+    """Deshace SOLO los enlaces que el proveedor inventó.
+
+    Se desenvuelven únicamente cuando la etiqueta es la propia URL (con o sin
+    esquema): ese patrón no lo escribe nadie a mano. Un enlace markdown de
+    verdad —`[documentación](https://…)`— se queda como está, porque puede ser
+    justo lo que el usuario pidió escribir en un README.
+    """
+
+    def reemplazo(m: re.Match) -> str:
+        etiqueta, url = m.group(1), m.group(2)
+        if etiqueta == url or etiqueta == re.sub(r"^https?://", "", url):
+            return etiqueta
+        return m.group(0)
+
+    return _ENLACE_RE.sub(reemplazo, texto)
+
+
 @dataclass
 class ToolCallEvent:
     name: str
     attrs: dict[str, str]
     body: str
     closed: bool = True
+
+    def __post_init__(self) -> None:
+        self.body = desenlazar(self.body)
+        self.attrs = {k: desenlazar(v) for k, v in self.attrs.items()}
 
 
 Event = Union[TextEvent, ToolStartEvent, ToolCallEvent]

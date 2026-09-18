@@ -32,13 +32,11 @@ def fake_g4f(piezas, llamadas: list):
     return _G4F()
 
 
-async def test_por_defecto_NO_reutiliza_la_conversacion_de_gemini(monkeypatch):
-    """El loop agéntico necesita mandar el contexto completo en cada llamada.
+async def test_el_transporte_no_reutiliza_conversacion_si_no_se_lo_piden(monkeypatch):
+    """El transporte por sí solo no asume nada: quien decide es la config.
 
-    Si se reutiliza la conversación del servidor, g4f manda SOLO el último
-    mensaje y delega la memoria en Gemini: el modelo pierde el prompt de
-    sistema y el contrato de herramientas, y el chat queda incoherente.
-    Verificado en vivo: por eso viene apagado.
+    (En la app viene encendido; aquí se comprueba que sin pedirlo no manda
+    identificadores de conversación a un proveedor que no los espera.)
     """
     llamadas: list = []
     monkeypatch.setattr(mod, "_import_g4f", lambda: fake_g4f(["ok"], llamadas))

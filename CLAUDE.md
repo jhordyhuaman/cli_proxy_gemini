@@ -107,13 +107,19 @@ preguntas de permiso descoordinadas. `agent/subagent.py` es el lado padre; `ipc/
   `Model not found`. `resolver_modelo()` traduce los alias cómodos.
 - **El prompt del sistema no vive en `loop.messages`.** Se antepone en `_wire_messages()`, así que
   el historial persistido queda limpio y el prompt se puede refrescar entre turnos.
-- **El contexto completo viaja en CADA llamada, y eso no es negociable.** Existe el cableado para
-  reutilizar la conversación del servidor de Gemini (`Chunk.state`, `Transport.stream(state=...)`,
-  `AgentLoop.conversation_state`, `SessionMeta.conversation_state`, y el `conversation=` de g4f),
-  pero viene **apagado** (`conversacion_continua = false`). Motivo, verificado en vivo: en cuanto
-  se manda `conversation=`, g4f envía SOLO el último mensaje del usuario y delega la memoria en
-  Gemini — el modelo deja de ver el prompt de sistema y el contrato de herramientas a mitad de un
-  encargo, y empieza a emitir XML roto. Para un loop agéntico, la memoria la manda mgm.
+- **Un solo chat en Gemini, pero el contexto lo manda mgm.** Toda la sesión reutiliza la misma
+  conversación del servidor (`conversation=`), así que no se llena gemini.google.com de chats. La
+  trampa: con `conversation=` a secas, g4f manda SOLO el último mensaje del usuario y el modelo se
+  queda sin prompt de sistema a mitad de un encargo (se comprobó en vivo: empieza a emitir XML
+  roto). La salida es pasarle además un `prompt=` explícito, que le gana a esa lógica:
+  `_prompt_incremental()` manda el sistema —el contrato— más solo los mensajes que Gemini todavía
+  no vio, contados en `state["enviados"]`. Un chat, contrato siempre presente, crecimiento lineal.
+- **Gemini mete formato de enlace DENTRO de las herramientas.** Dos efectos distintos, los dos
+  verificados en vivo: una URL con esquema (`http://…`) dentro de un `<tool>` **corta el stream**
+  ahí mismo y el bloque queda sin cerrar (por eso el prompt prohíbe escribirlas ahí y pide
+  `localhost:PUERTO`); y una URL en el cuerpo llega envuelta como `[url](url)`, que corrompería el
+  archivo escrito — lo deshace `desenlazar()` en el parser, respetando los enlaces markdown de
+  verdad. Fuera de las herramientas, en la prosa, las URLs llegan intactas.
 - **El generador de g4f se cierra SIEMPRE** (`_cerrar`, en el mismo hilo). Si se abandona, lo
   cierra el recolector de basura más tarde en otro hilo: g4f intenta apagar ahí su event loop y
   suelta `Cannot run the event loop while another loop is running` + `Unclosed client session`

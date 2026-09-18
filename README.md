@@ -141,12 +141,11 @@ mgm --modo plan                   # arranca en modo solo lectura
 mgm **retoma tu sesión**: el historial de la carpeta se guarda y se recarga solo, así que iterar
 sobre el mismo encargo continúa donde lo dejaste. Usa `-n` cuando sí quieras arrancar de cero.
 
-En el lado de Gemini, en cambio, cada llamada manda el contexto completo (y por eso aparecen
-chats nuevos en gemini.google.com). Es a propósito: existe la opción de reutilizar el mismo hilo
-del servidor (`conversacion_continua = true` en `~/.mgm/config.toml`), pero cuando se activa, g4f
-envía solo tu último mensaje y deja la memoria del lado de Gemini — el agente pierde su prompt de
-sistema a mitad de un encargo y empieza a romper el formato de herramientas. Déjalo apagado salvo
-que estés experimentando.
+**Un solo chat en Gemini, no uno por llamada.** Toda la sesión vive en la misma conversación de
+`gemini.google.com`: en una prueba real, un CRUD completo (6 llamadas al modelo, con sus
+herramientas) quedó en un único chat. Y sin perder el hilo: mgm sigue mandando él mismo el prompt
+de sistema más lo que el modelo aún no ha visto, en vez de delegarle la memoria a Gemini. Se puede
+apagar con `conversacion_continua = false` en `~/.mgm/config.toml`.
 
 Al arrancar la sesión interactiva, mgm te dice con qué cuenta estás hablando —
 `Conectado a Gemini como tu_correo@gmail.com`, o un aviso si estás en el endpoint

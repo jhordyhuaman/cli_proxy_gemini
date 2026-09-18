@@ -39,6 +39,15 @@ Asker = Callable[[ToolCall, str, Decision], Awaitable[str]]
 Emit = Callable[[object], None]
 
 CABECERA_RESULTADOS = "RESULTADOS DE TUS HERRAMIENTAS:"
+#: Cuántas veces seguidas se tolera que el modelo emita solo bloques rotos
+#: antes de rendirse. Sin esto se come el turno entero repitiendo lo mismo.
+MAX_BLOQUES_ROTOS_SEGUIDOS = 3
+AVISO_PROTOCOLO = (
+    "el modelo repitió varias veces un bloque de herramienta sin cerrar. "
+    "Suele pasar cuando mete una URL con http:// dentro del bloque: el "
+    "proveedor corta la respuesta justo ahí. Pídeselo de nuevo indicándole "
+    "que use 'localhost:PUERTO' sin el esquema."
+)
 AVISO_LIMITE = (
     "Se alcanzó el límite de iteraciones del turno. Resume en una frase qué "
     "lograste y qué quedó pendiente, sin usar más herramientas."
@@ -81,6 +90,7 @@ class AgentLoop:
         #: nuevo en cada llamada. Lo actualiza _stream_once con lo que
         #: devuelva el transporte.
         self.conversation_state = conversation_state
+        self.ultimo_turno_solo_bloques_rotos = False
 
     # ---------------------------------------------------------------- helpers
 
@@ -141,6 +151,9 @@ class AgentLoop:
 
     async def _ejecutar(self, eventos: list[ToolCallEvent]) -> list[str]:
         salidas: list[str] = []
+        self.ultimo_turno_solo_bloques_rotos = bool(eventos) and all(
+            not e.closed for e in eventos
+        )
         for evento in eventos:
             call = self.registry.call_from_event(evento.name, evento.attrs, evento.body)
             if not evento.closed:
@@ -172,6 +185,7 @@ class AgentLoop:
 
         iteracion = 0
         ultimo_texto = ""
+        rotos_seguidos = 0
         while iteracion < self.max_iterations:
             iteracion += 1
             self.on_event(IterationStart(iteracion, self.max_iterations))
@@ -192,6 +206,18 @@ class AgentLoop:
                 return self._fin("respuesta", iteracion, ultimo_texto)
 
             salidas = await self._ejecutar(llamadas)
+
+            # Si el modelo se atasca reemitiendo bloques rotos, no tiene
+            # sentido quemar el turno entero: en una sesión real se comió 14
+            # iteraciones seguidas sin avanzar nada.
+            if self.ultimo_turno_solo_bloques_rotos:
+                rotos_seguidos += 1
+                if rotos_seguidos >= MAX_BLOQUES_ROTOS_SEGUIDOS:
+                    self.on_event(LoopError("protocolo", AVISO_PROTOCOLO))
+                    return self._fin("protocolo", iteracion, ultimo_texto)
+            else:
+                rotos_seguidos = 0
+
             self.messages.append(
                 Message(
                     role="user",

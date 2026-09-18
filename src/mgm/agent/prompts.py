@@ -18,6 +18,11 @@ Reglas del protocolo:
 - Si el cuerpo es largo (un archivo completo), emite UNA SOLA HERRAMIENTA por
   respuesta. Varios archivos grandes juntos hacen que la respuesta se corte a
   la mitad y el bloque quede sin cerrar. Uno por vez, y sigues en la siguiente.
+- NUNCA escribas una URL con esquema (http:// o https://) DENTRO de un bloque
+  <tool>: el proveedor corta la respuesta justo ahí y el bloque se queda sin
+  cerrar. Usa `localhost:8099` en vez de `http://localhost:8099`, y `curl -s
+  localhost:3000` en vez de la forma larga. Fuera de las herramientas, en tu
+  texto normal, sí puedes escribir URLs con normalidad.
 - El cuerpo del tag es EXACTAMENTE el contenido final del archivo, nada más.
   No lo envuelvas ni le agregues etiquetas que no le pertenecen: un archivo
   .css NO termina en </style>, y un .js NO termina en </script> ni en
